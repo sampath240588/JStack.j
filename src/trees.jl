@@ -341,11 +341,307 @@ writetable(root*"/out.csv", dfout)
 
 
 
+# ------------------ XGB --------------------------
+
+using BinDeps, DataFrames, XGBoost
+#using Dates
+#root="/mnt/resource/analytics/models"
+root="/mapr/mapr04p/analytics0001/analytic_users/Models/RF/chunks"
+#dfd=readtable(root*"/out.csv")
+#dfd=readtable(root*"/48_out.csv")
+dfd=readtable(root*"/1_60_tmp.csv")
+#:datenum, :datenumlag , :chunks
+
+dfd=dfd[setdiff(names(dfd),[:date,:datelag,:date1,:chunks])]
+dfd[:trans_time]=pool(dfd[:trans_time])
+dfd[:operating_company]=pool(dfd[:operating_company])
+
+#just to get it working - these are strings
+dfd=dfd[setdiff(names(dfd),[:trans_time,:ndc_upc_ind,:item_type,:ad_event,:operating_company,:upc10])]
+
+net_price=convert(Array{Float32}, dfd[:net_price])
+
+dfd=dfd[setdiff(names(dfd),[:net_price])]
+
+lags=Symbol[:html5_lag,:static_lag,:native_creative_lag,:video_lag,:content_lag,:contextual_lag,:direct_lag,:prospecting_lag,:retargeting_lag,:behavorial_lag,:native_lag,:predictive_lag,:thirdrdparty_lag,:pmp_lag,:buzzfeed_lag,:hulu_lag,:popsugarus_lag,:rachaelraymag_lag,:shape_lag,:blank_lag,:eatingwell_lag,:meredithcorporation_lag,:realsimple_lag,:turndsp_lag,:cookinglight_lag,:dataxu_lag,:allrecipes_lag,:amazon_lag,:myfitnesspal_lag,:womenshealth_lag,:yummly_lag,:youtube_lag]
+dfdc=deepcopy(dfd)
+for l in lags
+    dfdc[l] = 0.0
+end
+
+
+function DMdata(dfx::DataFrame,lbl::Float32[]=Float32[1.1])
+    arr = convert(Array{Float32}, dfx )
+    if length(lbl) == 0
+        return DMatrix(arr)
+    else
+        return DMatrix(arr, label = lbl)
+    end
+end
+#Transform data to XGBoost matrices
+#trainArray = convert(Array{Float32}, dfd )
+#dtrain = DMatrix(trainArray, label = net_price)
+#testArray = convert(Array{Float32}, dfd )
+#dtest = DMatrix(testArray)
+#ctrlArray = convert(Array{Float32}, dfdc )
+#dctrl = DMatrix(ctrlArray)
+dtrain = DMatrix(convert(Array{Float32},dfd), label = net_price)
+dtest = DMatrix(convert(Array{Float32},dfd))
+dctrl = DMatrix(convert(Array{Float32},dfdc))
+
+num_round = 250; param = ["eta" => 0.2, "max_depth" => 20, "objective" => "reg:linear", "silent" => 1]
+XGBoostModel = xgboost(dtrain, num_round, param = param)
+
+or
+
+#random forrest
+param = ["eta" => 0.2, "max_depth" => 5, "objective" => "reg:linear", "silent" => 1,
+         "num_parallel_tree" => 1000, "subsample" => 0.5, "colsample_bytree" => 0.5
+        ]
+XGBoostModel = xgboost(dtrain, 10, param = param)
+
+
+ptest = XGBoost.predict(XGBoostModel, dtest)
+pctrl = XGBoost.predict(XGBoostModel, dctrl)
+mean(convert(Array{Float64},ptest))
+mean(convert(Array{Float64},pctrl))
+mean(ptest) - mean(pctrl)
+
+#importance(XGBoostModel)
+im = [ parse(x.fname[2:end]) for x in importance(XGBoostModel)]
+icols = [names(dfd)[c] for c in [ parse(x.fname[2:end]) for x in importance(XGBoostModel)]]
+
+# ************************* TEST **** TEST ********************************************
+# ************************* TEST **** TEST ********************************************
+# ************************* TEST **** TEST ********************************************
+# ************************* TEST **** TEST ********************************************
+# ************************* TEST **** TEST ********************************************
+# ************************* TEST **** TEST ********************************************
+# ************************* TEST **** TEST ********************************************
+
+using BinDeps, DataFrames, XGBoost
+root="/mapr/mapr04p/analytics0001/analytic_users/Models/RF/chunks"
+dfx=readtable(root*"/out.csv")  #dfx=readtable(root*"/1_60_tmp.csv")
+net_price=convert(Array{Float32}, dfx[:net_price])
+dfxc=deepcopy(dfx)
+for l in lags dfxc[l] = 0.0 end
+xvars = [:panid, :net_price, :date,:datelag,:date1,:chunks, :trans_time, :trans_num, :operating_company, :ndc_upc_ind,:item_type,:ad_event,   ]
+
+
+:product_id_jennieo6
+ :panid
+ :datenum
+ :datenumlag
+ :trans_num
+ :card_num
+ :registration_request_id
+ :upc
+
+
+ :venue_dim_key
+ :tm_dim_key_day
+ :item_list_price
+ 
+ :tm_dim_key_week
+
+ :item_dim_key
+ :units
+ :cents
+ :baseline_units
+ :baseline_cents
+ :totl_prc_reduc
+ 
+
+ :gross_imps
+
+
+v_covar=[ :feature,
+          :display,
+          :ad_version,
+          :card_discount,
+          :ad_discount,
+          :other_discount,
+          :tender_type,
+          :quantity,
+          :weight,
+          :store_num
+]
+
+
+v_breaks=[ :html5,
+ :static,
+ :native_creative,
+ :video,
+ :content,
+ :contextual,
+ :direct,
+ :prospecting,
+ :retargeting,
+ :behavorial,
+ :native,
+ :predictive,
+ :thirdrdparty,
+ :pmp,
+ :buzzfeed,
+ :hulu,
+ :popsugarus,
+ :rachaelraymag,
+ :shape,
+ :blank,
+ :eatingwell,
+ :meredithcorporation,
+ :realsimple,
+ :turndsp,
+ :cookinglight,
+ :dataxu,
+ :allrecipes,
+ :amazon,
+ :myfitnesspal,
+ :womenshealth,
+ :yummly,
+ :youtube
+]
+
+
+v_lags=[ :html5_lag,
+ :static_lag,
+ :native_creative_lag,
+ :video_lag,
+ :content_lag,
+ :contextual_lag,
+ :direct_lag,
+ :prospecting_lag,
+ :retargeting_lag,
+ :behavorial_lag,
+ :native_lag,
+ :predictive_lag,
+ :thirdrdparty_lag,
+ :pmp_lag,
+ :buzzfeed_lag,
+ :hulu_lag,
+ :popsugarus_lag,
+ :rachaelraymag_lag,
+ :shape_lag,
+ :blank_lag,
+ :eatingwell_lag,
+ :meredithcorporation_lag,
+ :realsimple_lag,
+ :turndsp_lag,
+ :cookinglight_lag,
+ :dataxu_lag,
+ :allrecipes_lag,
+ :amazon_lag,
+ :myfitnesspal_lag,
+ :womenshealth_lag,
+ :yummly_lag,
+ :youtube_lag
+]
+
+#dfx[v_lags]
+
+#TEST
+cols=vcat(v_lags,v_breaks, v_covar)
+dtrain = DMatrix(convert(Array{Float32},dfx[cols]), label = net_price)
+dtest = DMatrix(convert(Array{Float32},dfx[cols]))
+dctrl = DMatrix(convert(Array{Float32},dfxc[cols]))
+#param = ["eta" => 0.2, "max_depth" => 20, "objective" => "reg:linear", "silent" => 1]
+xgb = xgboost(dtrain, 250, param = ["eta" => 0.2, "max_depth" => 20, "objective" => "reg:linear", "silent" => 1] )
+ptest = XGBoost.predict(xgb, dtest)
+pctrl = XGBoost.predict(xgb, dctrl)
+mean(convert(Array{Float64},ptest))
+mean(convert(Array{Float64},pctrl))
+
+mean(ptest) - mean(pctrl)
+
+
+
+dfx[dfx[:panid].==1321364138,:]
+dfx[dfx[:net_price].!=0.0,:]
+julia> mean(dfx[dfx[:gross_imps].==0.0,:net_price])
+14.720302357882089
+julia> mean(dfx[dfx[:gross_imps].!=0.0,:net_price])
+0.0
+julia> mean(dfx[dfx[:gross_imps].>0.0,:net_price])
+0.0
+julia> length(dfx[dfx[:gross_imps].>0.0,:net_price])
+6123200
+julia> length(dfx[dfx[:gross_imps].==0.0,:net_price])
+1091488
+
+# *********************************************************************
 
 
 
 
 
+
+
+"""  """
+
+results[    findin(results[:parameter],map(x->string(x),    setdiff(m[:finalvars],[:group])  ) )         ,[:parameter,:coef]]
+
+findin(results[:parameter],map(x->string(x),    setdiff(m[:finalvars],[:group])  ) )
+
+bst <- xgboost(data = train$data, label = train$label, max.depth = 4, 
+               num_parallel_tree = 1000, subsample = 0.5, colsample_bytree =0.5, 
+               nround = 1
+               , objective = "binary:logistic")
+"""  """
+
+
+function genData(dfx::DataFrame,ycol::Symbol,z::Symbol[])
+    #dfy = deepcopy
+    y = convert(Array{Float32},dfx[ycol] )
+    x=convert(Array{Float32}, dfx[setdiff(names(dfx),[ycol])])
+    return DMatrix(x, label = y), y, x
+end
+dtrain,y,x = genData(dfd,:net_price)
+
+num_round = 250
+param = ["eta" => 0.2, "max_depth" => 20, "objective" => "reg:linear", "silent" => 1]
+xgb = xgboost(dtrain, num_round, param=param)
+pred = XGBoost.predict(xgb,dtrain)
+
+
+
+
+
+dtest,ty,tx = genData(dfdc,:net_price)
+DMatrix(tx)
+
+pred_ctrl = XGBoost.predict(xgb,dtest)
+
+
+
+
+
+
+# ------------------ END XGB --------------------------
+
+==================  TREES WORKING ==================== examples https://github.com/bensadeghi/DecisionTree.jl
+using DecisionTree
+y=dfd[:dol_per_trip_pre_p1]
+x=dfd[setdiff(names(dfd),[:dol_per_trip_pre_p1])]
+
+model = build_tree(Array(y), Array(x), 5)
+or 
+m2 = build_forest(Array(y), Array(x), 2, 10, 5, 0.7)
+
+apply_tree(model, Array(x))
+
+
+xtest=x[1:1000,:]
+xtrain=x[1000:end,:]
+ytest=y[1:1000]
+ytrain=y[1000:end]
+model = build_tree(Array(ytrain), Array(xtrain), 5)
+res = apply_tree(model, Array(xtest))
+map((x,y)->x-y, res,ytest)
+
+r2 = nfoldCV_tree(Array(ytrain), Array(xtrain), 3, 5)
+
+m2 = build_forest(Array(ytrain), Array(xtrain), 2, 10, 5, 0.7)
+res = apply_tree(m2, Array(xtest))
 
 
 
