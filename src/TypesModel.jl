@@ -1,38 +1,5 @@
 #--------------------- MODEL ----------------------------------------
 
-function readFixedFile(dfx::DataFrame,mname::String)
-    println("LOADING DFX Fixed")
-    vout = dfx[(dfx[:modelType].=="GLM")&(dfx[:model].==mname),[:parameter,:coef,:stderr,:zval,:pval]]
-    names!(vout,[:x,:estimate, :std_error, :z_value,:pr_z_])
-    return vout
-end
-#readFixedFile(dfx,"occ")
-
-function readRandFile(dfx::DataFrame,mname::String)
-    println("LOADING DFX Rand")
-    vout = dfx[(dfx[:modelType].=="GLMM")&(dfx[:model].==mname),[:ranef,:parameter,:coef,:stderr,:zval,:pval]]
-    vout[:adj_coef] = 0.0
-    vout[:adj_stderr]=  0.0
-    vout[:row] = 0
-    vout[:levelse] = 0
-    vout[:exposed_orig]= 1
-    vout[:exposed] = true
-    vout[:key] = map( (c,l) ->  c*" ("*l*")"  , vout[:ranef],vout[:parameter] ) 
-    for row in eachrow(vout)
-        n=vout[(vout[:ranef].==row[:ranef])&(vout[:parameter].=="none"),:coef][1]
-        s=vout[(vout[:ranef].==row[:ranef])&(vout[:parameter].=="none"),:stderr][1]
-        println(row[:ranef]," ~~ ",n," ~~ ",s)
-        row[:adj_coef] = row[:coef]-n
-        row[:adj_stderr] = sqrt(row[:stderr]^2+s^2)
-        row[:coef] = 0
-    end
-    vout=vout[[  :ranef,:row,:parameter,:coef,:adj_coef,:levelse,:stderr,:adj_stderr,:exposed_orig,:exposed,:key ]]
-    names!(vout,[:class,:row,:level,    :B0  ,:B1      ,:levelse,:SE0   ,:SE1       ,:exposed_orig,:exposed,:key ])
-    return vout[vout[:level].!="none",:]
-end
-#readRandFile(dfx,"occ")
-
-"""
 function readFixedFile(fname::AbstractString)
     if isfile(fname)
         idf = readtable(fname, header=true)
@@ -103,7 +70,7 @@ function readRandFile(fname::AbstractString, cfg::OrderedDict)
     end
     return idf
 end
-"""
+
 
 abstract MModel 
 
@@ -160,15 +127,13 @@ type MOcc <: MModel
     fmula::AbstractString
     modelName::AbstractString
     logvar::AbstractString
-    function MOcc(df_data::DataFrame,cfg::OrderedDict,dfx::DataFrame) this=new(); this.modelName="occ"; this.logvar="trps_pre_p1"; #this.sdf=pushSDFrow!(deepcopy(SDF),"Total Campaign",this.v_model);
+    function MOcc(df_data::DataFrame,cfg::OrderedDict) this=new(); this.modelName="occ"; if   cfg[:offset]  this.logvar="trps_pre_p1"; end#this.sdf=pushSDFrow!(deepcopy(SDF),"Total Campaign",this.v_model);
         this.fList=Symbol[]; this.rList=Symbol[]; this.dList=Symbol[]
         #this.hasBreaks=false
         this.fmula=""
-        idf = readFixedFile(dfx,"occ")
-        #idf=readFixedFile("Occasion/Occ_fixed_effects.csv")
-        this.feff=FOcc(df_data, idf)
-        idf = readRandFile(dfx,"occ")
-        #idf=readRandFile("Occasion/Occ_random_effects.csv",cfg)
+        idf=readFixedFile("Occasion/Occ_fixed_effects.csv")
+        this.feff=FOcc(df_data, idf,cfg)
+        idf=readRandFile("Occasion/Occ_random_effects.csv",cfg)
         this.reff=ROcc(df_data, idf)
         this.hasBreaks = length(idf[1])==0 ? false : true
         genScoreTotals(this,df_data,cfg[:TotalModelsOnly])
@@ -191,14 +156,12 @@ type MDolOcc <: MModel
     fmula::AbstractString
     modelName::AbstractString
     logvar::AbstractString
-    function MDolOcc(df_data::DataFrame,cfg::OrderedDict,dfx::DataFrame) this=new(); this.modelName="dolocc"; this.logvar="dol_per_trip_pre_p1"; #this.sdf=pushSDFrow!(deepcopy(SDF),"Total Campaign",this.v_model);
+    function MDolOcc(df_data::DataFrame,cfg::OrderedDict) this=new(); this.modelName="dolocc"; if  ( cfg[:offset])  this.logvar="dol_per_trip_pre_p1"; end #this.sdf=pushSDFrow!(deepcopy(SDF),"Total Campaign",this.v_model);
         this.fList=Symbol[]; this.rList=Symbol[]; this.dList=Symbol[]
         this.fmula=""
-        idf = readFixedFile(dfx,"dolocc") 
-        #idf=readFixedFile("DollarsOccasion/DolOcc_fixed_effects.csv")
-        this.feff=FDolOcc(df_data, idf)
-        idf = readRandFile(dfx,"dolocc")
-        #idf=readRandFile("DollarsOccasion/DolOcc_random_effects.csv",cfg)
+        idf=readFixedFile("DollarsOccasion/DolOcc_fixed_effects.csv")
+        this.feff=FDolOcc(df_data, idf, cfg)
+        idf=readRandFile("DollarsOccasion/DolOcc_random_effects.csv",cfg)
         this.reff=RDolOcc(df_data, idf)
         this.hasBreaks = length(idf[1])==0 ? false : true
         genScoreTotals(this,df_data,cfg[:TotalModelsOnly])
@@ -219,14 +182,12 @@ type MPen <: MModel
     fmula::AbstractString
     modelName::AbstractString
     logvar::AbstractString
-    function MPen(df_data::DataFrame,cfg::OrderedDict,dfx::DataFrame) this=new(); this.modelName="pen"; this.logvar="buyer_pre_p1"; #this.sdf=pushSDFrow!(deepcopy(SDF),"Total Campaign",this.v_model);
+    function MPen(df_data::DataFrame,cfg::OrderedDict) this=new(); this.modelName="pen";if  ( cfg[:offset])  this.logvar="buyer_pre_p1"; end#this.sdf=pushSDFrow!(deepcopy(SDF),"Total Campaign",this.v_model);
         this.fList=Symbol[]; this.rList=Symbol[]; this.dList=Symbol[]
         this.fmula=""
-        idf = readFixedFile(dfx,"pen")
-        #idf=readFixedFile("Penetration/Pen_fixed_effects.csv")
-        this.feff=FPen(df_data, idf)
-        idf = readRandFile(dfx,"pen")
-        #idf=readRandFile("Penetration/Pen_random_effects.csv",cfg)
+        idf=readFixedFile("Penetration/Pen_fixed_effects.csv")
+        this.feff=FPen(df_data, idf,cfg)
+        idf=readRandFile("Penetration/Pen_random_effects.csv",cfg)
         this.reff=RPen(df_data, idf)
         this.hasBreaks = length(idf[1])==0 ? false : true
         genScoreTotals(this,df_data,cfg[:TotalModelsOnly])
@@ -312,18 +273,18 @@ function genCnts(df_data::DataFrame, mocc::MOcc,mdolocc::MDolOcc,mpen::MPen,Tota
                 ranfx = row[:class]
                 v_level = row[:level]
                 exposed = row[:exposed] 
-                sdf[sdf[:key].==k, :Mt] = length(df_data[ (df_data[:group] .== 1) & (df_data[:buyer_pos_p1] .== 1 ) & (df_data[Symbol(ranfx)] .== v_level) ,1])
-                sdf[sdf[:key].==k, :M] = length(df_data[ (df_data[:buyer_pos_p1] .== 1) & (df_data[Symbol(ranfx)] .== v_level) ,1])     
-                sdf[sdf[:key].==k, :Nt] = length(df_data[ (df_data[:group] .== 1) & (df_data[Symbol(ranfx)] .== v_level) ,1])
-                sdf[sdf[:key].==k, :N] = length(df_data[ (df_data[Symbol(ranfx)] .== v_level) ,1])     
+                sdf[sdf[:key].==k, :Mt] = length(df_data[ (df_data[:group] .== 1) & (df_data[:buyer_pos_p1] .== 1 ) & (df_data[symbol(ranfx)] .== v_level) ,1])
+                sdf[sdf[:key].==k, :M] = length(df_data[ (df_data[:buyer_pos_p1] .== 1) & (df_data[symbol(ranfx)] .== v_level) ,1])     
+                sdf[sdf[:key].==k, :Nt] = length(df_data[ (df_data[:group] .== 1) & (df_data[symbol(ranfx)] .== v_level) ,1])
+                sdf[sdf[:key].==k, :N] = length(df_data[ (df_data[symbol(ranfx)] .== v_level) ,1])     
                 if exposed    #  If Exposed - default Nc & Mc to total -- else count by rndfx
                     sdf[sdf[:key].==k, :Mc] = length(df_data[ (df_data[:group] .== 0) & (df_data[:buyer_pos_p1] .== 1 ) ,1])
                     sdf[sdf[:key].==k, :Nc] = length(df_data[ (df_data[:group] .== 0) ,1])
                     sdf[sdf[:key].==k, :M] = sdf[sdf[:key].==k, :Mt] + sdf[sdf[:key].==k, :Mc] 
                     sdf[sdf[:key].==k, :N] = sdf[sdf[:key].==k, :Nt] + sdf[sdf[:key].==k, :Nc]
                 else
-                    sdf[sdf[:key].==k, :Mc] = length(df_data[ (df_data[:group] .== 0) & (df_data[:buyer_pos_p1] .== 1 ) & (df_data[Symbol(ranfx)] .== v_level) ,1])
-                    sdf[sdf[:key].==k, :Nc] = length(df_data[ (df_data[:group] .== 0) & (df_data[Symbol(ranfx)] .== v_level) ,1])
+                    sdf[sdf[:key].==k, :Mc] = length(df_data[ (df_data[:group] .== 0) & (df_data[:buyer_pos_p1] .== 1 ) & (df_data[symbol(ranfx)] .== v_level) ,1])
+                    sdf[sdf[:key].==k, :Nc] = length(df_data[ (df_data[:group] .== 0) & (df_data[symbol(ranfx)] .== v_level) ,1])
                 end
                 println("-- ",ranfx,"-- ",v_level,"-- ", exposed )
             end
@@ -698,7 +659,7 @@ end
 #    sdf=sort(x, cols = :key)
 #end
 ##genRDF(mocc,mdolocc,mpen, mdolhh)
- 
+
 
 function genRDF(mocc::MOcc,mdolocc::MDolOcc,mpen::MPen, mdolhh::MDolHH,cfg::OrderedDict=OrderedDict(:TotalModelsOnly => false))
     rdfFmt=[:key,:model,
@@ -893,8 +854,8 @@ function ConfidenceIntervals(feff::FixedEffect)
             md[:mean_score1] = md[:unadj_mean_score1];
             cis =  CIs(md, ZDict, 0)
             for (zscore_key,zscore) in  ZDict     
-                    ubk = Symbol(zscore_key*"_ub")
-                    lbk = Symbol(zscore_key*"_lb")
+                    ubk = symbol(zscore_key*"_ub")
+                    lbk = symbol(zscore_key*"_lb")
                     sdf[sdf[:key].==k, lbk] = md[lbk]*100
                     sdf[sdf[:key].==k, ubk] = md[ubk]*100
             end
@@ -947,13 +908,13 @@ function aggregate!(df_data::DataFrame, mocc::MOcc)
     for row = eachrow(mocc.reff.sdf)
         k = row[:key]
         ranfx = lowercase(row[:class])
-        sranfx = Symbol(ranfx)
+        sranfx = symbol(ranfx)
         v_level = row[:level]
         exposed = row[:exposed]         
 
-        dest_colname0=Symbol(k*"_occ_0")
-        dest_colname1=Symbol(k*"_occ_1")
-        xcol=Symbol("reff_"*ranfx*"_occ")   # Column to exclude
+        dest_colname0=symbol(k*"_occ_0")
+        dest_colname1=symbol(k*"_occ_1")
+        xcol=symbol("reff_"*ranfx*"_occ")   # Column to exclude
         fmula0="df_data[:pre_occ_score0]+"*getRandomFormula(mocc.reff.rcols, xcol)*"+"*string(row[:B0])
         fmula0=replace(fmula0,"++","+")    #if only one col
         fmula1="df_data[:pre_occ_score1]+"*getRandomFormula(mocc.reff.rcols, xcol)*"+"*string(row[:B1])
@@ -997,12 +958,12 @@ function aggregate!(df_data::DataFrame, mdolocc::MDolOcc)
     for row = eachrow(mdolocc.reff.sdf)
         k = row[:key]
         ranfx = lowercase(row[:class])
-        sranfx = Symbol(ranfx)
+        sranfx = symbol(ranfx)
         v_level = row[:level]
         exposed = row[:exposed]         
-        dest_colname0=Symbol(k*"_dolocc_0")
-        dest_colname1=Symbol(k*"_dolocc_1")
-        xcol=Symbol("reff_"*ranfx*"_dolocc")
+        dest_colname0=symbol(k*"_dolocc_0")
+        dest_colname1=symbol(k*"_dolocc_1")
+        xcol=symbol("reff_"*ranfx*"_dolocc")
         fmula0="df_data[:pre_dolocc_score0]+"*getRandomFormula(mdolocc.reff.rcols, xcol)*"+"*string(row[:B0])
         fmula0=replace(fmula0,"++","+")    #if only one col
         fmula1="df_data[:pre_dolocc_score1]+"*getRandomFormula(mdolocc.reff.rcols, xcol)*"+"*string(row[:B1])
@@ -1046,12 +1007,12 @@ function aggregate!(df_data::DataFrame,mpen::MPen)
     for row = eachrow(mpen.reff.sdf)
         k = row[:key]
         ranfx = lowercase(row[:class])
-        sranfx = Symbol(ranfx)
+        sranfx = symbol(ranfx)
         v_level = row[:level]
         exposed = row[:exposed]         
-        dest_colname0=Symbol(k*"_pen_0")
-        dest_colname1=Symbol(k*"_pen_1")
-        xcol=Symbol("reff_"*ranfx*"_pen")
+        dest_colname0=symbol(k*"_pen_0")
+        dest_colname1=symbol(k*"_pen_1")
+        xcol=symbol("reff_"*ranfx*"_pen")
         fmula0="df_data[:pre_pen_score0]+"*getRandomFormula(mpen.reff.rcols, xcol)*"+"*string(row[:B0])
         fmula0=replace(fmula0,"++","+")    #if only one col
         fmula1="df_data[:pre_pen_score1]+"*getRandomFormula(mpen.reff.rcols, xcol)*"+"*string(row[:B1])
@@ -1072,14 +1033,14 @@ function aggregate!(df_data::DataFrame,mpen::MPen)
         sdf[sdf[:key].==k ,:adj_mean_cntrl_grp] = mean_score0
         sdf[sdf[:key].==k ,:adj_mean_expsd_grp] = mean_score1
   
-        sdf[sdf[:key].==k ,:unadj_avg_expsd_hh_pre] = mean(df_data[ (df_data[:group] .== 1) & (df_data[Symbol(ranfx)] .== v_level) , :buyer_pre_p1] )
-        sdf[sdf[:key].==k ,:unadj_avg_expsd_hh_pst] = mean(df_data[ (df_data[:group] .== 1) & (df_data[Symbol(ranfx)] .== v_level) , :buyer_pos_p1] )
+        sdf[sdf[:key].==k ,:unadj_avg_expsd_hh_pre] = mean(df_data[ (df_data[:group] .== 1) & (df_data[symbol(ranfx)] .== v_level) , :buyer_pre_p1] )
+        sdf[sdf[:key].==k ,:unadj_avg_expsd_hh_pst] = mean(df_data[ (df_data[:group] .== 1) & (df_data[symbol(ranfx)] .== v_level) , :buyer_pos_p1] )
         if exposed
             sdf[sdf[:key].==k ,:unadj_avg_cntrl_hh_pre] = mpen.feff.sdf[1,:unadj_avg_cntrl_hh_pre]
             sdf[sdf[:key].==k ,:unadj_avg_cntrl_hh_pst] = mpen.feff.sdf[1,:unadj_avg_cntrl_hh_pst]    
         else
-            sdf[sdf[:key].==k ,:unadj_avg_cntrl_hh_pre] = mean(df_data[ (df_data[:group] .== 0) & (df_data[Symbol(ranfx)] .== v_level) , :buyer_pre_p1] )
-            sdf[sdf[:key].==k ,:unadj_avg_cntrl_hh_pst] = mean(df_data[ (df_data[:group] .== 0) & (df_data[Symbol(ranfx)] .== v_level) , :buyer_pos_p1] )
+            sdf[sdf[:key].==k ,:unadj_avg_cntrl_hh_pre] = mean(df_data[ (df_data[:group] .== 0) & (df_data[symbol(ranfx)] .== v_level) , :buyer_pre_p1] )
+            sdf[sdf[:key].==k ,:unadj_avg_cntrl_hh_pst] = mean(df_data[ (df_data[:group] .== 0) & (df_data[symbol(ranfx)] .== v_level) , :buyer_pos_p1] )
         end         
     end      
 end
