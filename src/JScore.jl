@@ -137,7 +137,7 @@ end
 genFixedCols(dfx,df_data,modelsDict)
 
 
-function genEQ(dfx::DataFrame, m::Dict, con::String="", ranef::Symbol=:empty,level::String="") # conditional equations
+function genEQ_OLD(dfx::DataFrame, m::Dict, con::String="", ranef::Symbol=:empty,level::String="") # conditional equations
     model=string(m[:modelName])
     con=strip(con)
     cbuyer_pos_p1=length(con) > 0 ? "&(df_data[:buyer_pos_p1].==1)" : "(df_data[:buyer_pos_p1].==1)"
@@ -151,6 +151,19 @@ function genEQ(dfx::DataFrame, m::Dict, con::String="", ranef::Symbol=:empty,lev
     return vout0, vout1   # ran_mean0 = random effects are zero, so leave out
 end
 
+function genEQ(dfx::DataFrame, m::Dict, con::String="", ranef::Symbol=:empty,level::String="") # conditional equations
+    model=string(m[:modelName])
+    con=strip(con)
+    cbuyer_pos_p1=length(con) > 0 ? "&(df_data[:buyer_pos_p1].==1)" : "(df_data[:buyer_pos_p1].==1)"
+    con = m[:Buyer_Pos_P1_is1] ? con*cbuyer_pos_p1 : con
+    con = length(con) > 0 ? con*"," : con
+    B = ranef==:empty ? "":"+"*string(dfx[(dfx[:modelType].=="GLMM")&(dfx[:model].==model)&(dfx[:ranef].==string(ranef))&(dfx[:parameter].==level),:adj_coef][1])
+    vout = ranef==:empty ? "df_data[$con:"*model*"%%]" : "df_data[$con:"*model*"0]"
+    vout0 = replace(vout,"%%","0")
+    vout1 = replace(vout,"%%","1")*B
+    return vout0, vout1   # ran_mean0 = random effects are zero, so leave out
+end
+
 
 function genFixedMeans(dfx::DataFrame)    
     for m in mlist
@@ -159,8 +172,8 @@ function genFixedMeans(dfx::DataFrame)
         adj0_eq, adj1_eq = genEQ(dfx,m)
         if inDFX(:unadj_mean_score0_eq) dfx[(dfx[:modelType].=="GLM")&(dfx[:model].==model)&(dfx[:parameter].=="group") ,:unadj_mean_score0_eq] = unadj0_eq end
         if inDFX(:unadj_mean_score1_eq) dfx[(dfx[:modelType].=="GLM")&(dfx[:model].==model)&(dfx[:parameter].=="group") ,:unadj_mean_score1_eq] = unadj1_eq end
-        if inDFX(:adj_mean_score0_eq) dfx[(dfx[:modelType].=="GLM")&(dfx[:model].==model)&(dfx[:parameter].=="group") ,:adj_mean_score0_eq] = unadj0_eq end
-        if inDFX(:adj_mean_score1_eq) dfx[(dfx[:modelType].=="GLM")&(dfx[:model].==model)&(dfx[:parameter].=="group") ,:adj_mean_score1_eq] = unadj1_eq end
+        if inDFX(:adj_mean_score0_eq) dfx[(dfx[:modelType].=="GLM")&(dfx[:model].==model)&(dfx[:parameter].=="group") ,:adj_mean_score0_eq] = adj0_eq end
+        if inDFX(:adj_mean_score1_eq) dfx[(dfx[:modelType].=="GLM")&(dfx[:model].==model)&(dfx[:parameter].=="group") ,:adj_mean_score1_eq] = adj1_eq end
         unadj0 = m[:Buyer_Pos_P1_is1] ? mean(exp(eval(parse(unadj0_eq)))) : mean(exp(eval(parse(unadj0_eq))) ./ (exp(eval(parse(unadj0_eq)))+1))
         unadj1 = m[:Buyer_Pos_P1_is1] ? mean(exp(eval(parse(unadj1_eq)))) : mean(exp(eval(parse(unadj1_eq))) ./ (exp(eval(parse(unadj1_eq)))+1))
         adj0 = m[:Buyer_Pos_P1_is1] ? mean(exp(eval(parse(adj0_eq)))) : mean(exp(eval(parse(adj0_eq))) ./ (exp(eval(parse(adj0_eq)))+1))
@@ -181,6 +194,7 @@ function genRandMeans(dfx::DataFrame)
             for row in eachrow(dfx[(dfx[:modelType].=="GLMM")&(dfx[:model].== model)&(dfx[:ranef].==string(r)),:])
                 println(model," Random Effect: ",row[:ranef]," ~~ ", row[:parameter]) 
                 adj0_eq, adj1_eq = genEQ(dfx,m,"",Symbol(row[:ranef]),row[:parameter])
+                #if (row[:ranef] == "creative")&(row[:model] =="occ")  println("TEST:: "*row[:ranef]*" : "*row[:parameter]*"  ::: ",adj0_eq) end
                 if inDFX(:adj_mean_score0_eq) dfx[(dfx[:modelType].=="GLMM")&(dfx[:model].==model)&(dfx[:parameter].==row[:parameter]) ,:adj_mean_score0_eq] = adj0_eq end
                 if inDFX(:adj_mean_score1_eq) dfx[(dfx[:modelType].=="GLMM")&(dfx[:model].==model)&(dfx[:parameter].==row[:parameter]) ,:adj_mean_score1_eq] = adj1_eq end
                 adj0 = m[:Buyer_Pos_P1_is1] ?  mean(exp(eval(parse(adj0_eq)))) :  mean(exp(eval(parse(adj0_eq))) ./ (exp(eval(parse(adj0_eq)))+1))
@@ -208,7 +222,7 @@ function genRawDataMeans(dfx::DataFrame)
                 dfxcol=Symbol("unadj_avg_"*tc*"_hh_$pp")
                 dfxcol_eq=Symbol("unadj_avg_"*tc*"_hh_"*pp*"_eq")
                 ex = "mean($dfname[ $ex_Buyer_Pos_P1 $ex_grp , :$df_col])"
-                println(ex)
+                println("$dfxcol := ",ex)
                 if inDFX(dfxcol_eq) dfx[(dfx[:parameter].=="group") & (dfx[:modelType].=="GLM") & (dfx[:model].==mname), dfxcol_eq] = ex end
                 dfx[(dfx[:parameter].=="group") & (dfx[:modelType].=="GLM") & (dfx[:model].==mname), dfxcol] = eval(parse(ex))                
             end
@@ -366,6 +380,34 @@ end
 dfx=removeBreaks(dfx)
 
 # **********************************************************************************************
+isnumeric{T<:Number}(::AbstractArray{T}) = true
+isnumeric(::Any) = false
+isString{T<:String}(::AbstractArray{T}) = true
+isString(::Any) = false
+isBool{T<:Bool}(::AbstractArray{T}) = true
+isBool(::Any) = false
+
+dfcor(dfr::DataFrame) = dfcor(dfr, names(dfr))
+
+function filler(dfx::DataFrame, cols::Vector{Symbol})
+    a = Any[]
+    for (n, v) in eachcol(dfx)
+        if n ∈ cols && isnumeric(v)
+            #push!(nms, n)
+            println(n," is numeric")
+        elseif n ∈ cols && isString(v)
+            println(n," is String")
+        elseif n ∈ cols && isBool(v)
+            println(n," is Bool")
+        else
+            println(n," is WTH")
+        end
+    end
+end
+
+filler(dfx,names(dfx)[25:end])
+#dfx[names(dfx)[30:end]]
+
 # ***************************************** DOLHH **********************************************
 # **********************************************************************************************
 function genDHHMeans(dfx::DataFrame)
@@ -386,6 +428,7 @@ function genDHHMeans(dfx::DataFrame)
     cis=[0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]
     cnts=convert(Array{Int64},collect(values(getCnts(df_data))))
     push!(dfx,vcat(pre,vars,cis,cnts,zeros(Int, length(names(dfx))-30)))
+    
     for ranef in unique(dfx[(dfx[:modelType].=="GLMM"),:ranef])
         for level in unique(dfx[(dfx[:modelType].=="GLMM")&(dfx[:ranef].==ranef),:parameter])
             println(ranef," ~~ ",level)

@@ -124,7 +124,7 @@ end
   
 
 
-# ******************* SEQUENTIAL *************************
+# *******************************************
 function runModels(mod_fname::String, modelsDict::Dict)
     dfd = readtable(mod_fname,header=true);
     poolit!(dfd,modelsDict[:factors])
@@ -199,7 +199,7 @@ end
     
     
                
-# ******************* CONCURRENT - DEFAULT *************************                
+# ******************************************                
 function runModels(mod_fname::String, jmod_fname::String, modelsDict::Dict)
    q = Symbol[]
    cnt=0
@@ -222,9 +222,9 @@ function runModels(mod_fname::String, jmod_fname::String, modelsDict::Dict)
    end 
                             
 end        
-runModels(mod_fname, jmod_fname,modelsDict)                   
-while !iscompletew() println("Not Complete yet!"); sleep(5); end                
-println("DONE!DONE!DONE!")
+#runModels(mod_fname, jmod_fname,modelsDict)                   
+#while !iscompletew() println("Not Complete yet!"); sleep(5); end                
+#println("DONE!DONE!DONE!")
 
                     
                     
@@ -265,10 +265,12 @@ function consolidateResults(modelsDict::Dict)
     end
     return sdf
 end     
-dfx = consolidateResults(modelsDict)  
-writetable(root*"/campaign.csv", dfx)                      
+#dfx = consolidateResults(modelsDict)  
+#writetable(root*"/campaign.csv", dfx)                      
         
-
+dx = runModels(mod_fname,modelsDict) 
+dfx = consolidateResults(modelsDict, dx)      
+writetable(root*"/campaign.csv", dfx)  
         
         
         
