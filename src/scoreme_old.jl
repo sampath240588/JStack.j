@@ -33,6 +33,7 @@ cfgDefaults=OrderedDict( :P2_Competitor => true
                         ,:dropvars => Symbol[]
                         ,:scoring_vars => Symbol[]
                         ,:TotalModelsOnly=>false
+	                ,:offset=>false
                        )
 
 
@@ -196,8 +197,12 @@ aggregateCommon!(mdolocc.feff)
 aggregateCommon!(mpen.feff) 
 ConfidenceIntervals(mocc.feff)
 ConfidenceIntervals(mdolocc.feff)
-ConfidenceIntervals(mpen.feff)
 
+mpen.feff.sdf[:B] = log((mpen.feff.sdf[:adj_dod_effct]/100)+1);
+mpen.feff.sdf[:P] = 2.0 * ccdf(Normal(), abs((mpen.feff.sdf[:B]./mpen.feff.sdf[:SE])));
+mpen.feff.sdf[:twotail_pval] = (1-mpen.feff.sdf[:P]);
+mpen.feff.sdf[:onetail_pval] = (1- (mpen.feff.sdf[:P]/2));
+ConfidenceIntervals(mpen.feff)
 
 # --------------------------------------------------------
 # ---------- BREAKS --------------------------------------
@@ -494,6 +499,12 @@ function ConfidenceIntervals(cnts::Cnts,reff::RanEffect)
 end
 ConfidenceIntervals(cnts, mocc.reff)
 ConfidenceIntervals(cnts, mdolocc.reff)
+
+mpen.reff.sdf[:B] = log((mpen.reff.sdf[:adj_dod_effct]/100)+1);
+mpen.reff.sdf[:P] = 2.0 * ccdf(Normal(), abs((mpen.reff.sdf[:B1_combo]./mpen.reff.sdf[:SE1_combo])));
+mpen.reff.sdf[:twotail_pval] = (1-mpen.reff.sdf[:P]);
+mpen.reff.sdf[:onetail_pval] = (1- (mpen.reff.sdf[:P]/2));
+
 ConfidenceIntervals(cnts, mpen.reff)
 
 #mdolhh.sdf=mdolhh.sdf[mdolhh.sdf[:key].!="creative_groups (none)",:]
