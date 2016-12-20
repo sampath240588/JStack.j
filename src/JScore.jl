@@ -1,5 +1,5 @@
 
-using DataStructures, DataArrays , DataFrames, StatsFuns, GLM , Distributions, MixedModels, StatsBase, JSON, StatLib, JuMP, NLopt, JStack, NLsolve
+using DataStructures, DataArrays , DataFrames, StatsFuns, GLM , Distributions, MixedModels, StatsBase, JSON, StatLib, JuMP, NLopt, NLsolve # JStack,
 root="/mnt/resource/analytics/models/rev"
 root="/mnt/resource/analytics/models/ALL#10"
 jmod_fname = root*"/dfd_model.json"
@@ -11,7 +11,6 @@ modelsDict[:pen]=modelsDict[:ipen]; delete!(modelsDict,:ipen)
 campaign_fname = root*"/campaign.csv" 
 dfx = readtable(campaign_fname,header=true);
 df_data = readtable(mod_fname,header=true);  
-
 
 dfx[:unadj_mean_score0] = 0.0
 dfx[:unadj_mean_score1] = 0.0
@@ -31,42 +30,39 @@ dfx[:twotail_80_pct_intrvl_lb]=0.0
 dfx[:twotail_80_pct_intrvl_ub]=0.0
 dfx[:twotail_90_pct_intrvl_lb]=0.0
 dfx[:twotail_90_pct_intrvl_ub]=0.0
+dfx[:onetail_pval] = 0.0
+dfx[:twotail_pval] = 0.0
 dfx[:M]=0
 dfx[:Mt]=0
 dfx[:Mc]=0
 dfx[:N]=0
 dfx[:Nt]=0
 dfx[:Nc]=0
-
-"""
-dfx[:unadj_mean_score0_eq] = ""
-dfx[:unadj_mean_score1_eq] = ""
+# ************ EQUATIONS COLS *****************
+#dfx[:unadj_mean_score0_eq] = ""
+#dfx[:unadj_mean_score1_eq] = ""
 dfx[:adj_mean_score0_eq ] = ""
 dfx[:adj_mean_score1_eq ] = ""
-"""
-"""
-dfx[:unadj_avg_expsd_hh_pre_eq]=""
-dfx[:unadj_avg_expsd_hh_pst_eq]=""
-dfx[:unadj_avg_cntrl_hh_pre_eq]=""
-dfx[:unadj_avg_cntrl_hh_pst_eq]=""
-dfx[:unadj_avg_cntrl_hh_pre_eq]=""
-dfx[:unadj_avg_cntrl_hh_pst_eq]=""
-"""
+#dfx[:unadj_avg_expsd_hh_pre_eq]=""
+#dfx[:unadj_avg_expsd_hh_pst_eq]=""
+#dfx[:unadj_avg_cntrl_hh_pre_eq]=""
+#dfx[:unadj_avg_cntrl_hh_pst_eq]=""
+#dfx[:unadj_avg_cntrl_hh_pre_eq]=""
+#dfx[:unadj_avg_cntrl_hh_pst_eq]=""
+
 
 # Anonymous function
 inDFX(c::Symbol) = c in names(dfx)
-
+mlist = [modelsDict[:occ],modelsDict[:dolocc],modelsDict[:pen]]  # otherwise we'd include modelsDict[:factors]...etc
 
 function adjustDFX(dfx::DataFrame)
     dfx[:adj_coef] = 0.0
     dfx[:adj_stderr]=  0.0
-    dfx[:onetail_pval] = 0.0
-    dfx[:twotail_pval] = 0.0
     noneB(model::String,ranef::String) =  dfx[(dfx[:modelType].=="GLMM")&(dfx[:model].==model)&(dfx[:ranef].==ranef),:coef][1]
     noneStdErr(model::String,ranef::String) =  dfx[(dfx[:modelType].=="GLMM")&(dfx[:model].==model)&(dfx[:ranef].==ranef),:stderr][1]
     grp(model::String)= dfx[(dfx[:modelType].=="GLM")&(dfx[:model].==model)&(dfx[:parameter].=="group"),:coef][1]
     grp_stderr(model::String)= dfx[(dfx[:modelType].=="GLM")&(dfx[:model].==model)&(dfx[:parameter].=="group"),:stderr][1]
-    for m in [modelsDict[:occ],modelsDict[:dolocc],modelsDict[:pen]] 
+    for m in mlist 
         mname=string(m[:modelName])
         g=grp(mname)
         se=grp_stderr(mname)
@@ -80,46 +76,36 @@ function adjustDFX(dfx::DataFrame)
             dfx[(dfx[:modelType].=="GLMM")&(dfx[:model].==mname)&(dfx[:ranef].==rs)&(dfx[:parameter].!="none"),:adj_stderr]= sqrt.(dfx[(dfx[:modelType].=="GLMM")&(dfx[:model].==mname)&(dfx[:ranef].==rs)&(dfx[:parameter].!="none"),:stderr].^2 + grp_stderr(mname)^2 )   #+ noneStdErr(mname,rs)^2    
         end
     end
-    # remove "none" : r = dfx[(dfx[:parameter].=="none")&(dfx[:modelType].=="GLMM"),:]
     dfx[(dfx[:modelType].=="GLMM"),:zval] = dfx[(dfx[:modelType].=="GLMM"),:adj_coef] ./ dfx[(dfx[:modelType].=="GLMM"),:adj_stderr] 
     dfx[(dfx[:modelType].=="GLMM"),:pval] = 2.0 .* ccdf(Normal(), abs(  dfx[(dfx[:modelType].=="GLMM"),:zval]  ))  
-    dfx[:onetail_pval] = 1 - (dfx[:pval] ./ 2)  # sdf[:onetail_pval_raw] = (1-(sdf[:Praw] ./ 2)) * 100
-    dfx[:twotail_pval] = 1 - dfx[:pval]         # sdf[:twotail_pval_raw] = (1-sdf[:Praw]) * 100
     return dfx
 end
 dfx = adjustDFX(dfx)
 
 
-
-function genRandCols(dfx::DataFrame, dfd::DataFrame, modelsDict::Dict,modelIN::Symbol)   # Based On campaign.csv variables
-    m=modelsDict[modelIN]
-    model=string(m[:modelName])
-    modelType="GLMM"
-    for r in m[:raneff]
-        sr=string(r)
-        rs=Symbol(sr*"_"*model)
-        println(rs)
-        dfd[rs]=deepcopy(dfd[r])
-        for row in eachrow(dfx[(dfx[:modelType].==modelType)&(dfx[:model].==model)&(dfx[:ranef].==sr) ,:])
-            dfd[(dfd[rs].==row[:parameter]),rs] = string(row[:coef])
-            println(rs," ~~ ",row[:parameter])
+function genRandCols(dfx::DataFrame, dfd::DataFrame)   #Creates cols with levels replaced with coef :ranef_occ :ranef_dolocc :ranef_pen 
+    for m in mlist
+        model=string(m[:modelName])
+        modelType="GLMM"
+        for r in m[:raneff]
+            sr=string(r)
+            rs=Symbol(sr*"_"*model)
+            println(rs)  
+            dfd[rs]=deepcopy(dfd[r])
+            for row in eachrow(dfx[(dfx[:modelType].==modelType)&(dfx[:model].==model)&(dfx[:ranef].==sr) ,:])
+                dfd[(dfd[rs].==row[:parameter]),rs] = string(row[:coef])
+                println(rs," ~~ ",row[:parameter])
+            end
+            if m[:Buyer_Pos_P1_is1] dfd[dfd[:buyer_pos_p1].==0,rs] = "0.0" end
+            dfd[rs] = map(x->parse(Float64,x),dfd[rs])
+            dfd[rs] = convert(Array{Float64},dfd[rs]) 
         end
-        if m[:Buyer_Pos_P1_is1] dfd[dfd[:buyer_pos_p1].==0,rs] = "0.0" end
-        dfd[rs] = map(x->parse(Float64,x),dfd[rs])
-        dfd[rs] = convert(Array{Float64},dfd[rs])
     end
 end
-genRandCols(dfx, df_data, modelsDict, :occ)
-genRandCols(dfx, df_data, modelsDict, :dolocc)
-genRandCols(dfx, df_data, modelsDict, :pen)
-#df_data[df_data[:buyer_pos_p1].==0,:creative]
+genRandCols(dfx, df_data)
 
+dfx = dfx[(dfx[:parameter].*dfx[:modelType].!="noneGLMM"),:]  # Remove NONE - here cause need none when gen Rand Cols - convert Float!!!!
 
-# Remove NONE !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-dfx = dfx[(dfx[:parameter].*dfx[:modelType].!="noneGLMM"),:]
-
-
-# WITH condition as parameter to be added to all DF queries
 function genFixedEQUASION(dfx::DataFrame, m::Dict, con::String) # conditional equations 
     model=string(m[:modelName])
     modelType="GLM"
@@ -139,64 +125,535 @@ function genFixedEQUASION(dfx::DataFrame, m::Dict, con::String) # conditional eq
     vout1=vout1*"+"*string(grp)
     return vout0, vout1
 end
-#r0,r1=genFixedEQUASION(dfx, modelsDict[:occ],"(dfname[:group].==XYZ)&(dfname[:buyer_pos_p1].==1),") # XYZ: 0/1 , dfname:dfname
 
 
-function genRandEQUASION(dfx::DataFrame, m::Dict, con::String, ranef::Symbol,level::String) # conditional equations
-    model=string(m[:modelName])
-    dfname="df_data"
-    con = replace(con,"dfname",dfname)
-    B=dfx[(dfx[:modelType].=="GLMM")&(dfx[:model].==model)&(dfx[:ranef].==string(ranef))&(dfx[:parameter].==level) ,:adj_coef][1]
-    vout=""
-    for r in setdiff(m[:raneff],[ranef])
-        vout=vout*".+$dfname[$con:"*string(r)*"_"*model*"]"
+function genFixedCols(dfx::DataFrame,df_data::DataFrame,modelsDict::Dict)   # Creates :occ0 :occ1 :dolocc0 :dolocc1 :pen0 :pen1
+    for m in mlist
+        r0,r1=genFixedEQUASION(dfx,m,"")  #no conditions = populate whole dataset col - even for occ/dolocc
+        df_data[Symbol(string(m[:modelName])*"0")] =  eval(parse(r0))
+        df_data[Symbol(string(m[:modelName])*"1")] =  eval(parse(r1))
     end
-    vout1=vout*"+"*string(B)
-    return vout, vout1   # ran_mean0 = random effects are zero, so leave out
 end
-#r0,r1=genRandEQUASION(dfx, modelsDict[:occ],"(dfname[:buyer_pos_p1].==1),",) # XYZ: 0/1 , dfname:dfname
+genFixedCols(dfx,df_data,modelsDict)
 
 
-
+function genEQ(dfx::DataFrame, m::Dict, con::String="", ranef::Symbol=:empty,level::String="") # conditional equations
+    model=string(m[:modelName])
+    con=strip(con)
+    cbuyer_pos_p1=length(con) > 0 ? "&(df_data[:buyer_pos_p1].==1)" : "(df_data[:buyer_pos_p1].==1)"
+    con = m[:Buyer_Pos_P1_is1] ? con*cbuyer_pos_p1 : con
+    con = length(con) > 0 ? con*"," : con
+    vout=reduce(*, map(x-> x==ranef ? "":".+df_data[$con:"*string(x)*"_"*model*"]"  ,m[:raneff]))    
+    vout = ranef==:empty ? vout : vout*"+"*string(dfx[(dfx[:modelType].=="GLMM")&(dfx[:model].==model)&(dfx[:ranef].==string(ranef))&(dfx[:parameter].==level),:adj_coef][1])
+    vout = ranef==:empty ? "df_data[$con:"*model*"%%]" : "df_data[$con:"*model*"%%]"*vout
+    vout0 = replace(vout,"%%","0")
+    vout1 = replace(vout,"%%","1")
+    return vout0, vout1   # ran_mean0 = random effects are zero, so leave out
+end
 
 
 function genFixedMeans(dfx::DataFrame)    
-    for m in [modelsDict[:occ],modelsDict[:dolocc],modelsDict[:pen]]
-        modelname=m[:modelName]
-        modelnameS=string(modelname)
-        c = m[:Buyer_Pos_P1_is1] ? "(dfname[:group].==XYZ)&(dfname[:buyer_pos_p1].==1)," : "(dfname[:group].==XYZ),"
-        r0,r1=genFixedEQUASION(dfx, modelsDict[modelname],c)
-        if inDFX(:unadj_mean_score0_eq) dfx[(dfx[:modelType].=="GLM")&(dfx[:model].==modelnameS)&(dfx[:parameter].=="group") ,:unadj_mean_score0_eq] = r0 end
-        if inDFX(:unadj_mean_score1_eq) dfx[(dfx[:modelType].=="GLM")&(dfx[:model].==modelnameS)&(dfx[:parameter].=="group") ,:unadj_mean_score1_eq] = r1 end
-
-        mr0= m[:Buyer_Pos_P1_is1] ?  mean(exp(eval(parse(r0)))) : mean(exp(eval(parse(r0))) ./ (exp(eval(parse(r0)))+1))
-        mr1= m[:Buyer_Pos_P1_is1] ?  mean(exp(eval(parse(r1)))) : mean(exp(eval(parse(r1))) ./ (exp(eval(parse(r1)))+1))        
-        dfx[(dfx[:modelType].=="GLM")&(dfx[:model].==modelnameS)&(dfx[:parameter].=="group") ,:unadj_mean_score0] = mr0
-        dfx[(dfx[:modelType].=="GLM")&(dfx[:model].==modelnameS)&(dfx[:parameter].=="group") ,:unadj_mean_score1] = mr1
-        
-        c = m[:Buyer_Pos_P1_is1] ? "(dfname[:buyer_pos_p1].==1)," : ""
-        r0,r1=genFixedEQUASION(dfx, modelsDict[modelname],c)     
-        if inDFX(:adj_mean_score0_eq) dfx[(dfx[:modelType].=="GLM")&(dfx[:model].==modelnameS)&(dfx[:parameter].=="group") ,:adj_mean_score0_eq] = r0 end
-        if inDFX(:adj_mean_score1_eq) dfx[(dfx[:modelType].=="GLM")&(dfx[:model].==modelnameS)&(dfx[:parameter].=="group") ,:adj_mean_score1_eq] = r1 end
-
-        mr0= m[:Buyer_Pos_P1_is1] ?  mean(exp(eval(parse(r0)))) :  mean(exp(eval(parse(r0))) ./ (exp(eval(parse(r0)))+1))
-        mr1= m[:Buyer_Pos_P1_is1] ?  mean(exp(eval(parse(r1)))) :  mean(exp(eval(parse(r1))) ./ (exp(eval(parse(r1)))+1))    
-        dfx[(dfx[:modelType].=="GLM")&(dfx[:model].==modelnameS)&(dfx[:parameter].=="group") ,:adj_mean_score0] = mr0
-        dfx[(dfx[:modelType].=="GLM")&(dfx[:model].==modelnameS)&(dfx[:parameter].=="group") ,:adj_mean_score1] = mr1
+    for m in mlist
+        model=string(m[:modelName])
+        unadj0_eq, unadj1_eq = genEQ(dfx,m,"(df_data[:group].==%%)")
+        adj0_eq, adj1_eq = genEQ(dfx,m)
+        if inDFX(:unadj_mean_score0_eq) dfx[(dfx[:modelType].=="GLM")&(dfx[:model].==model)&(dfx[:parameter].=="group") ,:unadj_mean_score0_eq] = unadj0_eq end
+        if inDFX(:unadj_mean_score1_eq) dfx[(dfx[:modelType].=="GLM")&(dfx[:model].==model)&(dfx[:parameter].=="group") ,:unadj_mean_score1_eq] = unadj1_eq end
+        if inDFX(:adj_mean_score0_eq) dfx[(dfx[:modelType].=="GLM")&(dfx[:model].==model)&(dfx[:parameter].=="group") ,:adj_mean_score0_eq] = unadj0_eq end
+        if inDFX(:adj_mean_score1_eq) dfx[(dfx[:modelType].=="GLM")&(dfx[:model].==model)&(dfx[:parameter].=="group") ,:adj_mean_score1_eq] = unadj1_eq end
+        unadj0 = m[:Buyer_Pos_P1_is1] ? mean(exp(eval(parse(unadj0_eq)))) : mean(exp(eval(parse(unadj0_eq))) ./ (exp(eval(parse(unadj0_eq)))+1))
+        unadj1 = m[:Buyer_Pos_P1_is1] ? mean(exp(eval(parse(unadj1_eq)))) : mean(exp(eval(parse(unadj1_eq))) ./ (exp(eval(parse(unadj1_eq)))+1))
+        adj0 = m[:Buyer_Pos_P1_is1] ? mean(exp(eval(parse(adj0_eq)))) : mean(exp(eval(parse(adj0_eq))) ./ (exp(eval(parse(adj0_eq)))+1))
+        adj1 = m[:Buyer_Pos_P1_is1] ? mean(exp(eval(parse(adj1_eq)))) : mean(exp(eval(parse(adj1_eq))) ./ (exp(eval(parse(adj1_eq)))+1))
+        dfx[(dfx[:modelType].=="GLM")&(dfx[:model].==model)&(dfx[:parameter].=="group") ,:unadj_mean_score0] = unadj0
+        dfx[(dfx[:modelType].=="GLM")&(dfx[:model].==model)&(dfx[:parameter].=="group") ,:unadj_mean_score1] = unadj1
+        dfx[(dfx[:modelType].=="GLM")&(dfx[:model].==model)&(dfx[:parameter].=="group") ,:adj_mean_score0] = adj0
+        dfx[(dfx[:modelType].=="GLM")&(dfx[:model].==model)&(dfx[:parameter].=="group") ,:adj_mean_score1] = adj1
     end
 end
 genFixedMeans(dfx)
-#dfx[(dfx[:parameter].=="group")&(dfx[:modelType].=="GLM"),:]
-
-#dfx[(dfx[:modelType].=="GLMM")&(dfx[:model].=="occ")&(dfx[:ranef].=="creative"),:unadj_mean_score0]
 
 
+function genRandMeans(dfx::DataFrame)
+    for m in mlist
+        model=string(m[:modelName])
+        for r in m[:raneff]
+            for row in eachrow(dfx[(dfx[:modelType].=="GLMM")&(dfx[:model].== model)&(dfx[:ranef].==string(r)),:])
+                println(model," Random Effect: ",row[:ranef]," ~~ ", row[:parameter]) 
+                adj0_eq, adj1_eq = genEQ(dfx,m,"",Symbol(row[:ranef]),row[:parameter])
+                if inDFX(:adj_mean_score0_eq) dfx[(dfx[:modelType].=="GLMM")&(dfx[:model].==model)&(dfx[:parameter].==row[:parameter]) ,:adj_mean_score0_eq] = adj0_eq end
+                if inDFX(:adj_mean_score1_eq) dfx[(dfx[:modelType].=="GLMM")&(dfx[:model].==model)&(dfx[:parameter].==row[:parameter]) ,:adj_mean_score1_eq] = adj1_eq end
+                adj0 = m[:Buyer_Pos_P1_is1] ?  mean(exp(eval(parse(adj0_eq)))) :  mean(exp(eval(parse(adj0_eq))) ./ (exp(eval(parse(adj0_eq)))+1))
+                adj1 = m[:Buyer_Pos_P1_is1] ?  mean(exp(eval(parse(adj1_eq)))) :  mean(exp(eval(parse(adj1_eq))) ./ (exp(eval(parse(adj1_eq)))+1)) 
+                dfx[(dfx[:modelType].=="GLMM")&(dfx[:model].==model)&(dfx[:parameter].==row[:parameter]) ,:adj_mean_score0] = adj0
+                dfx[(dfx[:modelType].=="GLMM")&(dfx[:model].==model)&(dfx[:parameter].==row[:parameter]) ,:adj_mean_score1] = adj1            
+            end
+        end        
+    end
+end
+genRandMeans(dfx)
+
+
+function genRawDataMeans(dfx::DataFrame) 
+    for m in mlist   # ************************* FIXED **************************
+        pre=string(m[:logvarOrig])
+        post=string(m[:y_var])
+        dfname="df_data"
+        mname=string(m[:modelName])
+        ex_Buyer_Pos_P1 = m[:Buyer_Pos_P1_is1] ? "($dfname[:buyer_pre_p1].==1)&" : ""
+        for pp in ["pre","pst"]
+            df_col = pp == "pre" ? pre : post
+            for tc in ["cntrl","expsd"]
+                ex_grp = tc == "cntrl" ? "($dfname[:group].==0) " : "($dfname[:group].==1) " 
+                dfxcol=Symbol("unadj_avg_"*tc*"_hh_$pp")
+                dfxcol_eq=Symbol("unadj_avg_"*tc*"_hh_"*pp*"_eq")
+                ex = "mean($dfname[ $ex_Buyer_Pos_P1 $ex_grp , :$df_col])"
+                println(ex)
+                if inDFX(dfxcol_eq) dfx[(dfx[:parameter].=="group") & (dfx[:modelType].=="GLM") & (dfx[:model].==mname), dfxcol_eq] = ex end
+                dfx[(dfx[:parameter].=="group") & (dfx[:modelType].=="GLM") & (dfx[:model].==mname), dfxcol] = eval(parse(ex))                
+            end
+        end
+    end 
+    for m in mlist  # *********************** RANDOM ************************ 
+        pre=string(m[:logvarOrig])
+        post=string(m[:y_var])
+        dfname="df_data"
+        mname=string(m[:modelName])
+        ex_Buyer_Pos_P1 = m[:Buyer_Pos_P1_is1] ? "($dfname[:buyer_pre_p1].==1) &" : ""
+        for r in m[:raneff]
+            rs=string(r)
+            for l in dfx[(dfx[:modelType].=="GLMM")&(dfx[:parameter].!="none")&(dfx[:ranef].==rs)&(dfx[:model].==mname),:parameter]
+                ex_level = "($dfname[:$rs] .== \"$l\")"
+                for pp in ["pre","pst"]
+                    df_col = pp == "pre" ? pre : post 
+                    for tc in ["cntrl","expsd"]
+                        dfxcol=Symbol("unadj_avg_"*tc*"_hh_$pp")
+                        break_exposed = true  # DEFAULT Hack because all Julia model data is exposed so far
+                        if (tc == "cntrl") & (break_exposed)   # default to total Campaign for exposed breaks
+                            fval = dfx[(dfx[:modelType].=="GLM")&(dfx[:parameter].=="group")&(dfx[:model].==mname),dfxcol][1]
+                            dfx[(dfx[:modelType].=="GLMM")&(dfx[:parameter].==l)&(dfx[:ranef].==rs)&(dfx[:model].==mname),dfxcol] = fval
+                        else
+                            ex_grp = tc == "cntrl" ? "($dfname[:group].==0) &" : "($dfname[:group].==1) &"   
+                            dfxcol_eq=Symbol("unadj_avg_"*tc*"_hh_"*pp*"_eq")
+                            ex = "mean($dfname[ $ex_grp $ex_Buyer_Pos_P1 $ex_level, :$df_col])"
+                            println(mname," ... ",dfxcol," ~~~ ",ex)
+                            if inDFX(dfxcol_eq) dfx[(dfx[:modelType].=="GLMM")&(dfx[:parameter].==l)&(dfx[:ranef].==rs)&(dfx[:model].==mname),dfxcol_eq]=ex end
+                            dfx[(dfx[:modelType].=="GLMM")&(dfx[:parameter].==l)&(dfx[:ranef].==rs)&(dfx[:model].==mname),dfxcol] = eval(parse(ex))
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+genRawDataMeans(dfx)
+
+
+function getCnts(df_data::DataFrame, ranef::String="", level::String="" )
+    isBreak = length(ranef) == 0 ? false : true
+    ex_re = isBreak ? "& (df_data[:$ranef] .== \"$level\")" : "  "  # need to have at least 2 spaces for single col belowbelow
+    ex_re_single_col = isBreak ? ex_re[2:end]*"," : ""   
+    ex_m = "length(df_data[ (df_data[:buyer_pos_p1] .== 1) $ex_re ,1])"
+    ex_mt="length(df_data[ (df_data[:group] .== 1) & (df_data[:buyer_pos_p1] .== 1 ) $ex_re ,1])"
+    ex_n="length(df_data[ $ex_re_single_col 1])"
+    ex_nt="length(df_data[ (df_data[:group] .== 1) $ex_re ,1])"
+    ex_mc = "length(df_data[ (df_data[:group] .== 0) & (df_data[:buyer_pos_p1] .== 1 ) ,1])"
+    ex_nc = "length(df_data[ (df_data[:group] .== 0) ,1])"
+    cdict = OrderedDict()
+    cdict[:M] =  eval(parse(ex_m))
+    cdict[:Mt] = eval(parse(ex_mt))
+    cdict[:Mc] = eval(parse(ex_mc))
+    cdict[:N] =  eval(parse(ex_n))
+    cdict[:Nt] = eval(parse(ex_nt))
+    cdict[:Nc] = eval(parse(ex_nc))    
+    if isBreak
+        break_exposed = true  # DEFAULT Hack because all Julia model data is exposed so far   
+        if break_exposed    #  If Exposed - default control (Nc & Mc) to total -- else count by rndfx        
+            cdict[:M] = cdict[:Mt] + cdict[:Mc]   # Recalculate totals as Test + the defaulted Control
+            cdict[:N] = cdict[:Nt] + cdict[:Nc]
+        else # Need to recalculate MC & Nc with break conditions break
+            ex_mc = "length(df_data[ (df_data[:group] .== 0) & (df_data[:buyer_pos_p1] .== 1 ) $ex_re ,1])"
+            ex_nc = "length(df_data[ (df_data[:group] .== 0)  $ex_re ,1])"
+            cdict[:Mc] = eval(parse(ex_mc))
+            cdict[:Nc] = eval(parse(ex_nc))
+        end
+    end
+    return cdict
+end
+
+
+function genCnts()
+    c=getCnts(df_data)
+    dfx[(dfx[:modelType].=="GLM")&(dfx[:parameter].=="group"),:M]=c[:M]
+    dfx[(dfx[:modelType].=="GLM")&(dfx[:parameter].=="group"),:Mt]=c[:Mt]
+    dfx[(dfx[:modelType].=="GLM")&(dfx[:parameter].=="group"),:Mc]=c[:Mc]
+    dfx[(dfx[:modelType].=="GLM")&(dfx[:parameter].=="group"),:N]=c[:N]
+    dfx[(dfx[:modelType].=="GLM")&(dfx[:parameter].=="group"),:Nt]=c[:Nt]
+    dfx[(dfx[:modelType].=="GLM")&(dfx[:parameter].=="group"),:Nc]=c[:Nc]
+    for r in unique(dfx[(dfx[:modelType].=="GLMM"),:ranef])
+        for l in unique(dfx[(dfx[:modelType].=="GLMM")&(dfx[:ranef].==r),:parameter])
+            c =  getCnts(df_data,r,l)
+            dfx[(dfx[:modelType].=="GLMM")&(dfx[:ranef].==r)&(dfx[:parameter].==l),:M]=c[:M]
+            dfx[(dfx[:modelType].=="GLMM")&(dfx[:ranef].==r)&(dfx[:parameter].==l),:Mt]=c[:Mt]
+            dfx[(dfx[:modelType].=="GLMM")&(dfx[:ranef].==r)&(dfx[:parameter].==l),:Mc]=c[:Mc]
+            dfx[(dfx[:modelType].=="GLMM")&(dfx[:ranef].==r)&(dfx[:parameter].==l),:N]=c[:N]
+            dfx[(dfx[:modelType].=="GLMM")&(dfx[:ranef].==r)&(dfx[:parameter].==l),:Nt]=c[:Nt]
+            dfx[(dfx[:modelType].=="GLMM")&(dfx[:ranef].==r)&(dfx[:parameter].==l),:Nc]=c[:Nc]
+        end
+    end
+end
+genCnts()
+
+
+function ConfIntrvl()
+    for row in eachrow(dfx)
+        runCI = false
+        if (row[:modelType] == "GLM") & (row[:parameter]=="group")
+            runCI = true
+            mean_score0=row[:unadj_mean_score0]  # TOTAL Confidence Intervals  # use unadj
+            mean_score1=row[:unadj_mean_score1] 
+            B=row[:coef]
+            SE=row[:stderr] 
+            Mt = row[:model]=="pen" ? row[:Nt] : row[:Mt]
+            Mc = row[:model]=="pen" ? row[:Nc] : row[:Mc]
+            M = row[:model]=="pen" ? row[:N] : row[:M]
+            println("Total: ",mean_score0,"...",mean_score1," : ",B," ~ ",SE," ~ ",Mt," ~ ",Mc," ~ ",M)
+            #ex="(($mean_score1*($Mt/$M))-($mean_score1*exp(-($B-($SE*\$z)))*($Mt/$M)))+(($mean_score0*exp(($B-($SE*\$z)))*($Mc/$M))-($mean_score0*($Mc/$M)))" 
+            #println("EX ",row[:model],": ",ex)  #,"   ~~~   ", eval(parse(ex)))
+        elseif row[:modelType]=="GLMM"
+            runCI = true
+            mean_score0=row[:adj_mean_score0] #RANDOM Confidence Intervals  # use adj
+            mean_score1=row[:adj_mean_score1]
+            B=row[:adj_coef]
+            SE=row[:adj_stderr]
+            Mt = row[:model]=="pen" ? row[:Nt] : row[:Mt]
+            Mc = row[:model]=="pen" ? row[:Nc] : row[:Mc]
+            M = row[:model]=="pen" ? row[:N] : row[:M]
+            println("Random: ",mean_score0,"...",mean_score1," : ",row[:ranef],"_",row[:parameter]," ~ ",B," ~ ",SE," ~ ",Mt," ~ ",Mc," ~ ",M)
+        end
+        if runCI
+            ZDict = Dict("onetail_80_pct_intrvl" => 0.84 ,"onetail_90_pct_intrvl" => 1.28, "twotail_80_pct_intrvl" => 1.28, "twotail_90_pct_intrvl" => 1.65)
+            for (zscore_key, zscore) in ZDict    
+                Lb_pre = (   (mean_score1*(Mt/M))    -   (mean_score1*exp(-(B-(SE*zscore)))*(Mt/M))   )  +  ## ------------ Lower Bound ---------------
+                         (   (mean_score0*exp((B-(SE*zscore)))*(Mc/M))    -   (mean_score0*(Mc/M))    )
+                row[Symbol(zscore_key*"_lb")] = ( Lb_pre/mean_score0 ) * 100
+                Ub_pre =  (     ( mean_score1*(Mt/M) )   -   ( mean_score1*exp(-(B+(SE*zscore)))*(Mt/M))   )  +  ## ------------ Upper Bound ---------------
+                          (     ( mean_score0*exp((B+(SE*zscore)))*(Mc/M))  - (mean_score0*(Mc/M) )   )
+                row[Symbol(zscore_key*"_ub")] = ( Ub_pre/mean_score0 ) * 100   
+                println("RAND CI $zscore_key ($zscore) LB:",row[Symbol(zscore_key*"_lb")]," ~~ UB : ", row[Symbol(zscore_key*"_ub")])
+            end            
+        end
+    end
+end
+ConfIntrvl()
+
+
+function removeBreaks(dfx::DataFrame)   # Shouldn't be an issue going forwward -- remove breaks that don't exist in all 3 models
+    dfo=deepcopy(dfx)
+    for ranef in unique(dfx[(dfx[:modelType].=="GLMM"),:ranef])
+        for level in unique(dfx[(dfx[:modelType].=="GLMM")&(dfx[:ranef].==ranef),:parameter])
+            cnt = length(dfx[(dfx[:modelType].=="GLMM")&(dfx[:ranef].==ranef)&(dfx[:parameter].==level),:adj_mean_score0])
+            if length(dfx[(dfx[:modelType].=="GLMM")&(dfx[:ranef].==ranef)&(dfx[:parameter].==level),:adj_mean_score0]) != 3
+                pre=length(dfo[1])
+                dfo=dfo[(dfo[:modelType].*dfo[:ranef].*dfo[:parameter].!="GLMM"*ranef*level),:]
+                post=length(dfo[1])
+                println("Remove : $ranef $level : $cnt :::: $pre -> $post")
+            end
+        end
+    end
+    return dfo
+end
+dfx=removeBreaks(dfx)
+
+# **********************************************************************************************
+# ***************************************** DOLHH **********************************************
+# **********************************************************************************************
+function genDHHMeans(dfx::DataFrame)
+    to0=dfx[(dfx[:modelType].=="GLM")&(dfx[:model].=="occ")&(dfx[:parameter].=="group"),:adj_mean_score0][1]
+    ty0=dfx[(dfx[:modelType].=="GLM")&(dfx[:model].=="dolocc")&(dfx[:parameter].=="group"),:adj_mean_score0][1]
+    tp0=dfx[(dfx[:modelType].=="GLM")&(dfx[:model].=="pen")&(dfx[:parameter].=="group"),:adj_mean_score0][1]
+    adj_mean_score0=to0*ty0*tp0            
+    to1=dfx[(dfx[:modelType].=="GLM")&(dfx[:model].=="occ")&(dfx[:parameter].=="group"),:adj_mean_score1][1]
+    ty1=dfx[(dfx[:modelType].=="GLM")&(dfx[:model].=="dolocc")&(dfx[:parameter].=="group"),:adj_mean_score1][1]
+    tp1=dfx[(dfx[:modelType].=="GLM")&(dfx[:model].=="pen")&(dfx[:parameter].=="group"),:adj_mean_score1][1]
+    adj_mean_score1=to1*ty1*tp1
+    unadj_avg_cntrl_hh_pre = mean(df_data[ (df_data[:group] .== 0), :prd_1_net_pr_pre] )
+    unadj_avg_expsd_hh_pre = mean(df_data[ (df_data[:group] .== 1), :prd_1_net_pr_pre] )
+    unadj_avg_cntrl_hh_pst = mean(df_data[ (df_data[:group] .== 0), :prd_1_net_pr_pos] )
+    unadj_avg_expsd_hh_pst = mean(df_data[ (df_data[:group] .== 1), :prd_1_net_pr_pos] )
+    pre=["total",0.0,0.0,0.0,0.0,"dolhh","ranef","DOLHH"]
+    vars=[0,0,adj_mean_score0,adj_mean_score1,unadj_avg_expsd_hh_pre,unadj_avg_expsd_hh_pst,unadj_avg_cntrl_hh_pre,unadj_avg_cntrl_hh_pst]
+    cis=[0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]
+    cnts=convert(Array{Int64},collect(values(getCnts(df_data))))
+    push!(dfx,vcat(pre,vars,cis,cnts,zeros(Int, length(names(dfx))-30)))
+    for ranef in unique(dfx[(dfx[:modelType].=="GLMM"),:ranef])
+        for level in unique(dfx[(dfx[:modelType].=="GLMM")&(dfx[:ranef].==ranef),:parameter])
+            println(ranef," ~~ ",level)
+            o=dfx[(dfx[:modelType].=="GLMM")&(dfx[:model].=="occ")&(dfx[:ranef].==ranef)&(dfx[:parameter].==level),:adj_mean_score0][1]
+            y=dfx[(dfx[:modelType].=="GLMM")&(dfx[:model].=="dolocc")&(dfx[:ranef].==ranef)&(dfx[:parameter].==level),:adj_mean_score0][1]
+            p=dfx[(dfx[:modelType].=="GLMM")&(dfx[:model].=="pen")&(dfx[:ranef].==ranef)&(dfx[:parameter].==level),:adj_mean_score0][1]
+            adj_mean_cntrl_grp=o*y*p            
+            o=dfx[(dfx[:modelType].=="GLMM")&(dfx[:model].=="occ")&(dfx[:ranef].==ranef)&(dfx[:parameter].==level),:adj_mean_score1][1]
+            y=dfx[(dfx[:modelType].=="GLMM")&(dfx[:model].=="dolocc")&(dfx[:ranef].==ranef)&(dfx[:parameter].==level),:adj_mean_score1][1]
+            p=dfx[(dfx[:modelType].=="GLMM")&(dfx[:model].=="pen")&(dfx[:ranef].==ranef)&(dfx[:parameter].==level),:adj_mean_score1][1]
+            adj_mean_expsd_grp=o*y*p
+            unadj_avg_expsd_hh_pre = mean(df_data[ (df_data[:group].==1) & (df_data[Symbol(ranef)].==level), :prd_1_net_pr_pre] )
+            unadj_avg_expsd_hh_pst = mean(df_data[ (df_data[:group].==1) & (df_data[Symbol(ranef)].==level), :prd_1_net_pr_pos] )
+            unadj_avg_cntrl_hh_pre = mean(df_data[ (df_data[:group].==0) & (df_data[Symbol(ranef)].==level), :prd_1_net_pr_pre] )
+            unadj_avg_cntrl_hh_pst = mean(df_data[ (df_data[:group].==0) & (df_data[Symbol(ranef)].==level), :prd_1_net_pr_pos] )         
+            exposed=true # temp hack - all exposed
+            if exposed
+                unadj_avg_cntrl_hh_pre = dfx[(dfx[:modelType].=="DOLHH")&(dfx[:parameter].=="total") ,:unadj_avg_cntrl_hh_pre][1]
+                unadj_avg_cntrl_hh_pst = dfx[(dfx[:modelType].=="DOLHH")&(dfx[:parameter].=="total") ,:unadj_avg_cntrl_hh_pst][1]     
+            end   
+            pre=[level,0.0,0.0,0.0,0.0,"dolhh",ranef,"DOLHH"]
+            vars=[0,0,adj_mean_score0,adj_mean_score1,unadj_avg_expsd_hh_pre,unadj_avg_expsd_hh_pst,unadj_avg_cntrl_hh_pre,unadj_avg_cntrl_hh_pst ]
+            cis=[0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]
+            cnts=convert(Array{Int64},collect(values(getCnts(df_data,ranef,level))))
+            #println("LENGTH : ",length(pre),length(vars),length(cis),length(cnts))
+            push!(dfx,vcat(pre,vars,cis,cnts,zeros(Int, length(names(dfx))-30)))
+        end
+    end  
+    
+end
+genDHHMeans(dfx)
+
+
+
+function collectModels(dfx::DataFrame,modelType::String,ranef::String,level::String)
+    mDict = OrderedDict()
+    o=dfx[(dfx[:modelType].==modelType)&(dfx[:model].=="occ")&(dfx[:ranef].==ranef)&(dfx[:parameter].==level),:]
+    y=dfx[(dfx[:modelType].==modelType)&(dfx[:model].=="dolocc")&(dfx[:ranef].==ranef)&(dfx[:parameter].==level),:]
+    p=dfx[(dfx[:modelType].==modelType)&(dfx[:model].=="pen")&(dfx[:ranef].==ranef)&(dfx[:parameter].==level),:]
+    mDict[:M]=p[:M][1]
+    mDict[:Mt]=p[:Mt][1]
+    mDict[:Mc]=p[:Mc][1]
+    mDict[:N]=p[:N][1]
+    mDict[:Mt]=p[:Nt][1]
+    mDict[:Nc]=p[:Nc][1]
+    mDict[:B1]=o[:adj_coef][1]   
+    mDict[:B2]=y[:adj_coef][1]
+    mDict[:B3]=p[:adj_coef][1] #fx[:adj_dod_effct] = ((dfx[:adj_mean_score1] .- dfx[:adj_mean_score0]) ./ dfx[:adj_mean_score0] ) *100
+    mDict[:SE1]=o[:adj_stderr][1]
+    mDict[:SE2]=y[:adj_stderr][1]
+    mDict[:SE3]=p[:adj_stderr][1] #fx[:adj_dod_effct] = ((dfx[:adj_mean_score1] .- dfx[:adj_mean_score0]) ./ dfx[:adj_mean_score0] ) *100S
+    mDict[:o_SE0]=0
+    mDict[:y_SE0]=0
+    mDict[:p_SE0]=0
+    mDict[:o_B0]=0
+    mDict[:y_B0]=0
+    mDict[:p_B0]=0
+    mDict[:o_mean_score0]=o[:adj_mean_score0][1]
+    mDict[:o_mean_score1]=o[:adj_mean_score1][1]
+    mDict[:y_mean_score0]=y[:adj_mean_score0][1]
+    mDict[:y_mean_score1]=y[:adj_mean_score1][1]
+    mDict[:p_mean_score0]=p[:adj_mean_score0][1]
+    mDict[:p_mean_score1]=p[:adj_mean_score1][1] 
+    return mDict
+end
+
+
+function ConfidenceIntervals(dfx::DataFrame)
+    for ranef in unique(dfx[(dfx[:modelType].=="GLMM"),:ranef])
+        for level in unique(dfx[(dfx[:modelType].=="GLMM")&(dfx[:ranef].==ranef),:parameter])
+            mDict=collectModels(dfx,"GLMM",ranef,level)
+            println("Running CI for : $ranef : $level")
+            mDict[:metakey] = ranef*"~"*level        
+            calcPValue_Opt(mDict)
+            CIs_O(mDict)
+            dfx[(dfx[:model].=="dolhh")&(dfx[:ranef].==ranef)&(dfx[:parameter].==level),:onetail_pval] = mDict[:onetail_pval]*100
+            dfx[(dfx[:model].=="dolhh")&(dfx[:ranef].==ranef)&(dfx[:parameter].==level),:twotail_pval] = mDict[:twotail_pval]*100
+            for k in keys(ZDict)
+                dfx[(dfx[:model].=="dolhh")&(dfx[:ranef].==ranef)&(dfx[:parameter].==level),Symbol(k*"_lb")] = mDict[Symbol(k*"_lb")]*100
+                dfx[(dfx[:model].=="dolhh")&(dfx[:ranef].==ranef)&(dfx[:parameter].==level),Symbol(k*"_ub")] = mDict[Symbol(k*"_ub")]*100
+            end
+        end
+    end
+end
+ConfidenceIntervals(dfx)
+
+
+function genReport(dfx::DataFrame)
+    dfx=dfx[(dfx[:modelType].=="GLM")&(dfx[:parameter].=="group")|(dfx[:modelType].=="GLMM"),:]
+    rep=[ :MODEL_DESC, :Model, :TIME_AGG_PERIOD, :START_WEEK,:END_WEEK, :dependent_variable,:CNT_EXPSD_HH, :UNADJ_AVG_EXPSD_HH_PRE,
+          :UNADJ_AVG_CNTRL_HH_PRE,:UNADJ_AVG_EXPSD_HH_PST,:UNADJ_AVG_CNTRL_HH_PST,:UNADJ_DOD_EFFCT,:UNADJ_DIFF_EFFCT,
+          :ADJ_MEAN_EXPSD_GRP,:ADJ_MEAN_CNTRL_GRP,:ADJ_DOD_EFFCT,:TWOTAIL_PVAL,:ONETAIL_PVAL,:ABS_DIFF,
+          :DOL_DIFF,:ONETAIL_80_PCT_INTRVL_UB,:ONETAIL_80_PCT_INTRVL_LB,:ONETAIL_90_PCT_INTRVL_UB,:ONETAIL_90_PCT_INTRVL_LB,
+          :TWOTAIL_80_PCT_INTRVL_UB,:TWOTAIL_80_PCT_INTRVL_LB,:TWOTAIL_90_PCT_INTRVL_UB,:TWOTAIL_90_PCT_INTRVL_LB,
+          :CNT_IMPRESSIONS,:TWOTAIL_PVAL_to_Campaign,:ONETAIL_PVAL_to_Campaign,:CNT_Model_HH
+        ]
+    dfx[isnan(dfx[:unadj_avg_expsd_hh_pre]),:unadj_avg_expsd_hh_pre] = 0.0  # Sometime there are no records for subset
+    dfx[isnan(dfx[:unadj_avg_expsd_hh_pst]),:unadj_avg_expsd_hh_pst] = 0.0  # Sometime there are no records for subset
+    dfx[:adj_dod_effct] = ((dfx[:adj_mean_score1] .- dfx[:adj_mean_score0]) ./ dfx[:adj_mean_score0] ) *100
+    dfx[:unadj_dod_effct] = ( (( dfx[:unadj_avg_expsd_hh_pst] .- dfx[:unadj_avg_expsd_hh_pre]) .- (dfx[:unadj_avg_cntrl_hh_pst ] .- dfx[:unadj_avg_cntrl_hh_pre]))  ./  dfx[:unadj_avg_cntrl_hh_pst] ) *100
+    dfx[:unadj_diff_effct] = ((dfx[:unadj_avg_expsd_hh_pst] .- dfx[:unadj_avg_cntrl_hh_pst]) ./ dfx[:unadj_avg_cntrl_hh_pst] )*100
+    dfx[:model_desc] = dfx[:ranef]*" (".*dfx[:parameter]*")"
+    dfx[:abs_diff] = dfx[:adj_mean_score1] .- dfx[:adj_mean_score0]
+    dfx[:dol_diff] = dfx[:adj_mean_score1] .- dfx[:adj_mean_score0]
+    dfx[:cnt_model_hh] = dfx[:Nt]
+    dfx[findin(dfx[:model],["occ","dolocc"]),:cnt_model_hh] = dfx[findin(dfx[:model],["occ","dolocc"]),:Mt]       
+    dfx[:onetail_pval] = 1 - (dfx[:pval] ./ 2)  # sdf[:onetail_pval_raw] = (1-(sdf[:Praw] ./ 2)) * 100
+    dfx[:twotail_pval] = 1 - dfx[:pval]         # sdf[:twotail_pval_raw] = (1-sdf[:Praw]) * 100
+    dfx[:empty] = ""
+
+    dfx[:cnt_expsd_hh]=0
+    dfx[:cnt_impressions]=0
+    dfx[:twotail_pval_to_campaign]=0.0
+    dfx[:onetail_pval_to_campaign]=0.0
+    dfo=dfx[[:model_desc,:empty,:empty,:empty,:empty,:model,:cnt_expsd_hh,:unadj_avg_expsd_hh_pre, :unadj_avg_expsd_hh_pst, 
+             :unadj_avg_cntrl_hh_pre, :unadj_avg_cntrl_hh_pst,:unadj_dod_effct,:unadj_diff_effct,
+             :adj_mean_score1,:adj_mean_score0,:adj_dod_effct,:twotail_pval,:onetail_pval,:abs_diff,:dol_diff,
+             :onetail_80_pct_intrvl_ub,:onetail_80_pct_intrvl_lb,:onetail_90_pct_intrvl_ub,:onetail_90_pct_intrvl_lb,
+             :twotail_80_pct_intrvl_ub,:twotail_80_pct_intrvl_lb,:twotail_90_pct_intrvl_ub,:twotail_90_pct_intrvl_lb
+             ,:cnt_impressions ,:twotail_pval_to_campaign,:onetail_pval_to_campaign ,:cnt_model_hh
+        ]]
+    names!(dfo,rep)
+end
+dfz = genReport(dfx)
+
+
+HERE!!!!! look at UNADJ_AVG_EXPSD_HH_PST :unadj_avg_expsd_hh_pst │ UNADJ_AVG_CNTRL_HH_PST --- they look off
+
+
+
+
+# ****************************************************************************************************************************************
+
+
+
+function hhcounts(cnts::Cnts)
+    sdf=cnts.sdf 
+    sdf[:hh]=0.0
+    sdf[:impressions]=0.0
+    sdf[:weight]=0.0
+    df_hhc = readtable("hhcounts.csv",header=true); lowercase(df_hhc)
+    df_hhc[:class] = map(x->lowercase(x)  ,df_hhc[:class])
+    for row in eachrow(df_hhc[df_hhc[:class].!="total campaign",:])
+        k=rkey(row)
+        sdf[sdf[:key].==k,:hh] = row[:hh]
+        sdf[sdf[:key].==k,:impressions] = row[:impressions]
+    end
+    #tot = sum(sdf[:hh])
+    tot = by(sdf,:class, df -> sum(df[:hh]))[:x1][2]
+    toti = sum(sdf[:impressions])
+    sdf[sdf[:key].=="Total Campaign",:hh] = tot
+    sdf[sdf[:key].=="Total Campaign",:impressions] = toti
+    for row in eachrow(cnts.sdf[cnts.sdf[:key].!="Total Campaign",:])
+        k=rkey(row)
+        sdf[sdf[:key].==k,:weight] = row[:hh] / tot
+        println(typeof(row[:hh]))
+        println(row[:hh])
+    end
+end
+
+
+
+
+function np_val(iDict::OrderedDict)
+    M = get(iDict, :M, NA)
+    Mt = get(iDict, :Mt, NA)
+    Mc = get(iDict, :Mc, NA)
+    mean_score0 = get(iDict, :adj_mean_cntrl_grp, NA)
+    mean_score1 = get(iDict, :adj_mean_expsd_grp, NA)
+    B = get(iDict, :B1_combo, NA)
+    SE = get(iDict, :SE1_combo, NA)
+    println(get(iDict,:key, NA),"~",M,"~",Mt,"~",Mc,"~",mean_score0,"~",mean_score1,"~",B,"~",SE)
+    
+    function f!(x, fvec)
+        Lb_pre = (   (mean_score1*(Mt/M))    -   (mean_score1*exp(-(B-(SE*x[1])))*(Mt/M))   )  +
+                 (   (mean_score0*exp((B-(SE*x[1])))*(Mc/M))    -   (mean_score0*(Mc/M))    )
+        Lb = Lb_pre/mean_score0
+        fvec[1] = Lb
+    end
+    r=nlsolve(f!,[0.1])
+    #println(r)
+    zvalue=r.zero[1]
+    pvalue=2.0 * ccdf(Normal(), abs(zvalue))
+    two_tail = 1-pvalue     
+    one_tail = 1-(pvalue/2)
+    return one_tail, two_tail
+end
+
+function applyWeights(mocc::MOcc,mdolocc::MDolOcc,mpen::MPen)
+    for m in [mocc,mdolocc,mpen]
+        println("Processing : ",m.modelName)
+        m.reff.sdf = join(m.reff.sdf,cnts.sdf[[:key,:weight]], on = :key)
+        sdf=m.reff.sdf
+        #sdf[:factor]=0.0  #unadj_mean_score0
+        fdf=deepcopy(m.reff.sdf)
+        for c in [:unadj_avg_expsd_hh_pre,:unadj_avg_cntrl_hh_pre,:unadj_avg_expsd_hh_pst,:unadj_avg_cntrl_hh_pst,:adj_mean_expsd_grp,:adj_mean_cntrl_grp,:mean_score0,:mean_score1]
+            fdf[c] = map((x,y) -> (x*y), fdf[c],fdf[:weight])
+        end
+        for col in [:unadj_avg_expsd_hh_pre,:unadj_avg_cntrl_hh_pre,:unadj_avg_expsd_hh_pst,:unadj_avg_cntrl_hh_pst,:adj_mean_expsd_grp,:adj_mean_cntrl_grp,:mean_score0,:mean_score1]
+            tot=m.feff.sdf[1,col]
+            scol=string(col)
+            sdf[symbol("f_unweighted_"*scol)] = sdf[col]
+            sdf[symbol("f_"*scol)] = 0.0
+            lst=by(fdf[!isnan(fdf[col]),:], :class, df -> sum(df[col]))
+            rename!(lst, :x1,:creative_weight)
+            lst[:factor] = tot ./ lst[:creative_weight]             
+            for row in eachrow(lst)
+                f=row[:factor]
+                sdf[sdf[:class].==row[:class], symbol("f_"*scol) ] = f
+                sdf[sdf[:class].==row[:class], col ] = sdf[sdf[:class].==row[:class], col ] * f
+            end
+        end          
+        sdf[:f_unweighted_onetail_pval] = sdf[:onetail_pval]
+        sdf[:f_unweighted_twotail_pval] = sdf[:twotail_pval]
+        sdf[:f_unweighted_adj_dod_effct] = sdf[:adj_dod_effct]
+        
+        sdf[:adj_dod_effct] = ((sdf[:adj_mean_expsd_grp] - sdf[:adj_mean_cntrl_grp])  ./ sdf[:adj_mean_cntrl_grp] ) * 100   
+        for i in 1:length(sdf[1])   
+            d=df2dict(sdf[i,:])
+            p1, p2 = np_val(d)
+            p1=p1*100
+            p2=p2*100
+            sdf[i,:onetail_pval] = p1
+            sdf[i,:twotail_pval] = p2
+        end
+       # #RE-Default exposed Break Ctrl cols to total
+        ##exposed
+        #for col in [:unadj_avg_cntrl_hh_pre,:unadj_avg_cntrl_hh_pst,:adj_mean_cntrl_grp]
+        #    totval=m.feff.sdf[1,col]
+        #    sdf[sdf[:exposed].==true,col] = totval
+        #end
+        ##    sdf[sdf[:key].==k ,:unadj_avg_cntrl_hh_pre] = mpen.feff.sdf[1,:unadj_avg_cntrl_hh_pre]
+        ##    sdf[sdf[:key].==k ,:unadj_avg_cntrl_hh_pst] = mpen.feff.sdf[1,:unadj_avg_cntrl_hh_pst] 
+    end
+end
+if cfg[:counts]
+    applyWeights(mocc,mdolocc,mpen)
+end
+ 
+
+
+
+
+
+#function genLevels()
+#    cnts=OrderedDict()     #cnts["total"] = getCnts(df_data)
+#    for r in unique(dfx[(dfx[:modelType].=="GLMM"),:ranef])
+#        rdict= Dict()
+#        for l in unique(dfx[(dfx[:modelType].=="GLMM")&(dfx[:ranef].==r),:parameter])
+#            rdict[l] =  getCnts(df_data,r,l)
+#        end
+#        cnts[r] = rdict
+#    end
+#    return cnts
+#end
+##levels = genLevels()
+##"2016 All Powercore Amazon Digital Shopper" in dfx[(dfx[:modelType].=="GLMM")&(dfx[:ranef].=="creative"),:parameter]
+
+
+
+
+"""
 # Function Creates Fixed regression Columns first , then adds ranef cols to fixed calc column -- much faster
 #NOTES: Leave out fixed group1 - because thats test, and we account for text in the raneff's
 #       reg0 = fixed_reg0 + [ranefs - referenced break/level] 
 #       reg1 = fixed_reg0 + [ranefs - referenced break/level] + level adj_coef 
 function genRandMeans(dfx::DataFrame)
-    for m in [modelsDict[:occ],modelsDict[:dolocc],modelsDict[:pen]]
+    for m in mlist
         modelname=string(m[:modelName])
         c = m[:Buyer_Pos_P1_is1] ? "(dfname[:buyer_pos_p1].==1)," : ""
         r0,r1=genFixedEQUASION(dfx,m,"")  #no conditions = populate whole dataset col - even for occ/dolocc
@@ -226,204 +683,62 @@ function genRandMeans(dfx::DataFrame)
 end
 genRandMeans(dfx)
 #dfx[(dfx[:parameter].=="WebMD")&(dfx[:modelType].=="GLMM"),:adj_mean_score0_eq][1]
+"""
 
 
 
-
-
-function genRawDataMeans(dfx::DataFrame)
-    # ************************* FIXED ************************** 
-    for m in [modelsDict[:occ],modelsDict[:dolocc],modelsDict[:pen]]
-        pre=string(m[:logvarOrig])
-        post=string(m[:y_var])
-        dfname="df_data"
-        mname=string(m[:modelName])
-        ex_Buyer_Pos_P1 = m[:Buyer_Pos_P1_is1] ? "($dfname[:buyer_pre_p1].==1)&" : ""
-        for pp in ["pre","pst"]
-            df_col = pp == "pre" ? pre : post
-            for tc in ["cntrl","expsd"]
-                ex_grp = tc == "cntrl" ? "($dfname[:group].==0) " : "($dfname[:group].==1) " 
-                dfxcol=Symbol("unadj_avg_"*tc*"_hh_$pp")
-                dfxcol_eq=Symbol("unadj_avg_"*tc*"_hh_"*pp*"_eq")
-                ex = "mean($dfname[ $ex_Buyer_Pos_P1 $ex_grp , :$df_col])"
-                println(ex)
-                if inDFX(dfxcol_eq) dfx[(dfx[:parameter].=="group") & (dfx[:modelType].=="GLM") & (dfx[:model].==mname), dfxcol_eq] = ex end
-                dfx[(dfx[:parameter].=="group") & (dfx[:modelType].=="GLM") & (dfx[:model].==mname), dfxcol] = eval(parse(ex))                
-            end
-        end
-    end  #dfx[isnan(dfx[:unadj_avg_expsd_hh_pre]) & (dfx[:modelType].=="GLM"),:unadj_avg_expsd_hh_pre] = 0.0  #A hack to fix missing data --
-    
-    # *********************** RANDOM ************************ 
-    for m in [modelsDict[:occ],modelsDict[:dolocc],modelsDict[:pen]]
-        pre=string(m[:logvarOrig])
-        post=string(m[:y_var])
-        dfname="df_data"
-        mname=string(m[:modelName])
-        ex_Buyer_Pos_P1 = m[:Buyer_Pos_P1_is1] ? "($dfname[:buyer_pre_p1].==1) &" : ""
-        for r in m[:raneff]
-            rs=string(r)
-            for l in dfx[(dfx[:modelType].=="GLMM")&(dfx[:parameter].!="none")&(dfx[:ranef].==rs)&(dfx[:model].==mname),:parameter]
-                ex_level = "($dfname[:$rs] .== \"$l\")"
-                for pp in ["pre","pst"]
-                    df_col = pp == "pre" ? pre : post 
-                    for tc in ["cntrl","expsd"]
-                        dfxcol=Symbol("unadj_avg_"*tc*"_hh_$pp")
-                        break_exposed = true  # DEFAULT Hack because all Julia model data is exposed so far
-                        if (tc == "cntrl") & (break_exposed)   # default to total Campaign for exposed breaks
-                            fval = dfx[(dfx[:modelType].=="GLM")&(dfx[:parameter].=="group")&(dfx[:model].==mname),dfxcol][1]
-                            dfx[(dfx[:modelType].=="GLMM")&(dfx[:parameter].==l)&(dfx[:ranef].==rs)&(dfx[:model].==mname),dfxcol] = fval
-                            #dfx[dfx[:unadj_avg_cntrl_hh_pst].!=0.0,:unadj_avg_cntrl_hh_pst]
-                            #dfx[(dfx[:modelType].=="GLM")&(dfx[:parameter].=="group"),:unadj_avg_cntrl_hh_pst]
-                        else
-                            ex_grp = tc == "cntrl" ? "($dfname[:group].==0) &" : "($dfname[:group].==1) &"   
-                            dfxcol_eq=Symbol("unadj_avg_"*tc*"_hh_"*pp*"_eq")
-                            ex = "mean($dfname[ $ex_grp $ex_Buyer_Pos_P1 $ex_level, :$df_col])"
-                            println(mname," ... ",dfxcol," ~~~ ",ex)
-                            if inDFX(dfxcol_eq) dfx[(dfx[:modelType].=="GLMM")&(dfx[:parameter].==l)&(dfx[:ranef].==rs)&(dfx[:model].==mname),dfxcol_eq]=ex end
-                            dfx[(dfx[:modelType].=="GLMM")&(dfx[:parameter].==l)&(dfx[:ranef].==rs)&(dfx[:model].==mname),dfxcol] = eval(parse(ex))
-                        end
-                    end
-                end
-            end
-        end
+"""
+function genRandEQUASION(dfx::DataFrame, m::Dict, con::String, ranef::Symbol,level::String) # conditional equations
+    model=string(m[:modelName])
+    dfname="df_data"
+    con = replace(con,"dfname",dfname)
+    B=dfx[(dfx[:modelType].=="GLMM")&(dfx[:model].==model)&(dfx[:ranef].==string(ranef))&(dfx[:parameter].==level) ,:adj_coef][1]
+    vout=""
+    for r in setdiff(m[:raneff],[ranef])
+        vout=vout*".+$dfname[$con:"*string(r)*"_"*model*"]"
     end
-    #dfx[:adj_dod_effct] =  ((dfx[:adj_mean_score1] .- dfx[:adj_mean_score0]) ./ dfx[:adj_mean_score0] ) *100
-    #    dfx[isnan(dfx[:adj_dod_effct]),:adj_dod_effct] = 0.0
+    vout1=vout*"+"*string(B)
+    return vout, vout1   # ran_mean0 = random effects are zero, so leave out
 end
-genRawDataMeans(dfx)
+#r0,r1=genRandEQUASION(dfx, modelsDict[:occ],"(dfname[:buyer_pos_p1].==1),",) # XYZ: 0/1 , dfname:dfname
+"""
 
+"""
+function genFixedMeansFULL(dfx::DataFrame)    
+    for m in mlist
+        modelname=m[:modelName]
+        modelnameS=string(modelname)
+        c = m[:Buyer_Pos_P1_is1] ? "(dfname[:group].==XYZ)&(dfname[:buyer_pos_p1].==1)," : "(dfname[:group].==XYZ),"
+        r0,r1=genFixedEQUASION(dfx, m,c)
+        if inDFX(:unadj_mean_score0_eq) dfx[(dfx[:modelType].=="GLM")&(dfx[:model].==modelnameS)&(dfx[:parameter].=="group") ,:unadj_mean_score0_eq] = r0 end
+        if inDFX(:unadj_mean_score1_eq) dfx[(dfx[:modelType].=="GLM")&(dfx[:model].==modelnameS)&(dfx[:parameter].=="group") ,:unadj_mean_score1_eq] = r1 end
 
+        mr0= m[:Buyer_Pos_P1_is1] ?  mean(exp(eval(parse(r0)))) : mean(exp(eval(parse(r0))) ./ (exp(eval(parse(r0)))+1))
+        mr1= m[:Buyer_Pos_P1_is1] ?  mean(exp(eval(parse(r1)))) : mean(exp(eval(parse(r1))) ./ (exp(eval(parse(r1)))+1))        
+        dfx[(dfx[:modelType].=="GLM")&(dfx[:model].==modelnameS)&(dfx[:parameter].=="group") ,:unadj_mean_score0] = mr0
+        dfx[(dfx[:modelType].=="GLM")&(dfx[:model].==modelnameS)&(dfx[:parameter].=="group") ,:unadj_mean_score1] = mr1
+        
+        c = m[:Buyer_Pos_P1_is1] ? "(dfname[:buyer_pos_p1].==1)," : ""
+        r0,r1=genFixedEQUASION(dfx, m,c)     
+        if inDFX(:adj_mean_score0_eq) dfx[(dfx[:modelType].=="GLM")&(dfx[:model].==modelnameS)&(dfx[:parameter].=="group") ,:adj_mean_score0_eq] = r0 end
+        if inDFX(:adj_mean_score1_eq) dfx[(dfx[:modelType].=="GLM")&(dfx[:model].==modelnameS)&(dfx[:parameter].=="group") ,:adj_mean_score1_eq] = r1 end
 
-
-function getCnts(df_data::DataFrame, ranef::String="", level::String="" )
-    isBreak = length(ranef) == 0 ? false : true
-    ex_re = isBreak ? "& (df_data[:$ranef] .== \"$level\")" : "  "  # need to have at least 2 spaces for single col belowbelow
-    ex_re_single_col = isBreak ? ex_re[2:end]*"," : ""   
-    ex_m = "length(df_data[ (df_data[:buyer_pos_p1] .== 1) $ex_re ,1])"
-    ex_mt="length(df_data[ (df_data[:group] .== 1) & (df_data[:buyer_pos_p1] .== 1 ) $ex_re ,1])"
-    ex_n="length(df_data[ $ex_re_single_col 1])"
-    ex_nt="length(df_data[ (df_data[:group] .== 1) $ex_re ,1])"
-    ex_mc = "length(df_data[ (df_data[:group] .== 0) & (df_data[:buyer_pos_p1] .== 1 ) ,1])"
-    ex_nc = "length(df_data[ (df_data[:group] .== 0) ,1])"
-    ######println("break:",ex_re,"\n single:",ex_re_single_col,"\n M:",ex_m,"\n Mt:",ex_mt,"\n N:",ex_n,"\n Nt:",ex_nt,"\n Mc:",ex_mc,"\n Nc:",ex_nc)
-#    println("M:",ex_m,"\n Mt:",ex_mt,"\n N:",ex_n,"\n Nt:",ex_nt,"\n Mc:",ex_mc,"\n Nc:",ex_nc)
-    cdict = Dict()
-    cdict[:M] =  eval(parse(ex_m))
-    cdict[:Mt] = eval(parse(ex_mt))
-    cdict[:N] =  eval(parse(ex_n))
-    cdict[:Nt] = eval(parse(ex_nt))
-    cdict[:Mc] = eval(parse(ex_mc))
-    cdict[:Nc] = eval(parse(ex_nc))
-    if isBreak
-        #println("calc for breaks")
-        break_exposed = true  # DEFAULT Hack because all Julia model data is exposed so far   
-        if break_exposed    #  If Exposed - default control (Nc & Mc) to total -- else count by rndfx        
-            cdict[:M] = cdict[:Mt] + cdict[:Mc]   # Recalculate totals as Test + the defaulted Control
-            cdict[:N] = cdict[:Nt] + cdict[:Nc]
-            else # Need to recalculate MC & Nc with break conditions break
-            ex_mc = "length(df_data[ (df_data[:group] .== 0) & (df_data[:buyer_pos_p1] .== 1 ) $ex_re ,1])"
-            ex_nc = "length(df_data[ (df_data[:group] .== 0)  $ex_re ,1])"
-            cdict[:Mc] = eval(parse(ex_mc))
-            cdict[:Nc] = eval(parse(ex_nc))
-        end
-    end
-    return cdict
-end
-
-#function genLevels()
-#    cnts=OrderedDict()     #cnts["total"] = getCnts(df_data)
-#    for r in unique(dfx[(dfx[:modelType].=="GLMM"),:ranef])
-#        rdict= Dict()
-#        for l in unique(dfx[(dfx[:modelType].=="GLMM")&(dfx[:ranef].==r),:parameter])
-#            rdict[l] =  getCnts(df_data,r,l)
-#        end
-#        cnts[r] = rdict
-#    end
-#    return cnts
-#end
-##levels = genLevels()
-##"2016 All Powercore Amazon Digital Shopper" in dfx[(dfx[:modelType].=="GLMM")&(dfx[:ranef].=="creative"),:parameter]
-
-
-
-function genCnts()
-    c=getCnts(df_data)
-    dfx[(dfx[:modelType].=="GLM")&(dfx[:parameter].=="group"),:M]=c[:M]
-    dfx[(dfx[:modelType].=="GLM")&(dfx[:parameter].=="group"),:Mt]=c[:Mt]
-    dfx[(dfx[:modelType].=="GLM")&(dfx[:parameter].=="group"),:Mc]=c[:Mc]
-    dfx[(dfx[:modelType].=="GLM")&(dfx[:parameter].=="group"),:N]=c[:N]
-    dfx[(dfx[:modelType].=="GLM")&(dfx[:parameter].=="group"),:Nt]=c[:Nt]
-    dfx[(dfx[:modelType].=="GLM")&(dfx[:parameter].=="group"),:Nc]=c[:Nc]
-    #dfx[(dfx[:modelType].=="GLM")&(dfx[:parameter].=="group"),:]
- 
-    for r in unique(dfx[(dfx[:modelType].=="GLMM"),:ranef])
-        for l in unique(dfx[(dfx[:modelType].=="GLMM")&(dfx[:ranef].==r),:parameter])
-            c =  getCnts(df_data,r,l)
-            dfx[(dfx[:modelType].=="GLMM")&(dfx[:ranef].==r)&(dfx[:parameter].==l),:M]=c[:M]
-            dfx[(dfx[:modelType].=="GLMM")&(dfx[:ranef].==r)&(dfx[:parameter].==l),:Mt]=c[:Mt]
-            dfx[(dfx[:modelType].=="GLMM")&(dfx[:ranef].==r)&(dfx[:parameter].==l),:Mc]=c[:Mc]
-            dfx[(dfx[:modelType].=="GLMM")&(dfx[:ranef].==r)&(dfx[:parameter].==l),:N]=c[:N]
-            dfx[(dfx[:modelType].=="GLMM")&(dfx[:ranef].==r)&(dfx[:parameter].==l),:Nt]=c[:Nt]
-            dfx[(dfx[:modelType].=="GLMM")&(dfx[:ranef].==r)&(dfx[:parameter].==l),:Nc]=c[:Nc]
-        end
+        mr0= m[:Buyer_Pos_P1_is1] ?  mean(exp(eval(parse(r0)))) :  mean(exp(eval(parse(r0))) ./ (exp(eval(parse(r0)))+1))
+        mr1= m[:Buyer_Pos_P1_is1] ?  mean(exp(eval(parse(r1)))) :  mean(exp(eval(parse(r1))) ./ (exp(eval(parse(r1)))+1))    
+        dfx[(dfx[:modelType].=="GLM")&(dfx[:model].==modelnameS)&(dfx[:parameter].=="group") ,:adj_mean_score0] = mr0
+        dfx[(dfx[:modelType].=="GLM")&(dfx[:model].==modelnameS)&(dfx[:parameter].=="group") ,:adj_mean_score1] = mr1
     end
 end
-genCnts()
+#genFixedMeansFULL(dfx)  # Not used -- but good to have for other campaign types
+"""
 
 
 
 
-function ConfIntrvl()
-    for row in eachrow(dfx)
-        runCI = false
-        if (row[:modelType] == "GLM") & (row[:parameter]=="group")
-            runCI = true
-            mean_score0=row[:unadj_mean_score0]  # TOTAL Confidence Intervals  # use unadj
-            mean_score1=row[:unadj_mean_score1] 
-            B=row[:coef]
-            SE=row[:stderr] 
-            #tot_cnts=getCnts(df_data)
-            #Mt=tot_cnts[:Mt]
-            #Mc=tot_cnts[:Mc]
-            #M=tot_cnts[:M]
-            Mt = row[:model]=="pen" ? row[:Nt] : row[:Mt]
-            Mc = row[:model]=="pen" ? row[:Nc] : row[:Mc]
-            M = row[:model]=="pen" ? row[:N] : row[:M]
-            println("Total: ",mean_score0,"...",mean_score1," : ",B," ~ ",SE," ~ ",Mt," ~ ",Mc," ~ ",M)
-            ex="(($mean_score1*($Mt/$M))-($mean_score1*exp(-($B-($SE*\$z)))*($Mt/$M)))+(($mean_score0*exp(($B-($SE*\$z)))*($Mc/$M))-($mean_score0*($Mc/$M)))" 
-            println("EX ",row[:model],": ",ex)  #,"   ~~~   ", eval(parse(ex)))
-        elseif row[:modelType]=="GLMM"
-            runCI = true
-            mean_score0=row[:adj_mean_score0] #RANDOM Confidence Intervals  # use adj
-            mean_score1=row[:adj_mean_score1]
-            B=row[:adj_coef]
-            SE=row[:adj_stderr]
-            #Mt = levels[row[:ranef]][row[:parameter]][:Mt] 
-            #Mc = levels[row[:ranef]][row[:parameter]][:Mc] 
-            #M  = levels[row[:ranef]][row[:parameter]][:M]
-            Mt = row[:model]=="pen" ? row[:Nt] : row[:Mt]
-            Mc = row[:model]=="pen" ? row[:Nc] : row[:Mc]
-            M = row[:model]=="pen" ? row[:N] : row[:M]
-            println("Random: ",mean_score0,"...",mean_score1," : ",row[:ranef],"_",row[:parameter]," ~ ",B," ~ ",SE," ~ ",Mt," ~ ",Mc," ~ ",M)
-        end
-        if runCI
-            ZDict = Dict("onetail_80_pct_intrvl" => 0.84 ,"onetail_90_pct_intrvl" => 1.28, "twotail_80_pct_intrvl" => 1.28, "twotail_90_pct_intrvl" => 1.65)
-            for (zscore_key, zscore) in ZDict    
-                Lb_pre = (   (mean_score1*(Mt/M))    -   (mean_score1*exp(-(B-(SE*zscore)))*(Mt/M))   )  +  ## ------------ Lower Bound ---------------
-                         (   (mean_score0*exp((B-(SE*zscore)))*(Mc/M))    -   (mean_score0*(Mc/M))    )
-                row[Symbol(zscore_key*"_lb")] = ( Lb_pre/mean_score0 ) * 100
-                Ub_pre =  (     ( mean_score1*(Mt/M) )   -   ( mean_score1*exp(-(B+(SE*zscore)))*(Mt/M))   )  +  ## ------------ Upper Bound ---------------
-                          (     ( mean_score0*exp((B+(SE*zscore)))*(Mc/M))  - (mean_score0*(Mc/M) )   )
-                row[Symbol(zscore_key*"_ub")] = ( Ub_pre/mean_score0 ) * 100   
-                println("RAND CI $zscore_key ($zscore) LB:",row[Symbol(zscore_key*"_lb")]," ~~ UB : ", row[Symbol(zscore_key*"_ub")])
-            end            
-        end
-    end
-end
-ConfIntrvl()
 
 
 
+"""
 function expandDFX()
     dfx[:adj_mean_score0_p] = 0.0
     dfx[:adj_mean_score1_p] = 0.0
@@ -446,7 +761,7 @@ GLMx(model::String) = hcat(names(dfx),Array(dfx[(dfx[:modelType].=="GLM")&(dfx[:
 #GLMx("occ")
 GLMMx(model::String,ranef::String,level::String) = hcat(names(dfx), Array(dfx[(dfx[:modelType].=="GLMM")&(dfx[:model].==model)&(dfx[:ranef].==ranef)&(dfx[:parameter].==level),:])')
 #GLMMx("occ","creative","all Powercore Preroll")
-
+"""
 
 
 """
@@ -548,334 +863,138 @@ rpen[:tot1]=rpen[:tot0].+rpen[:grp]
 # =========pen models = Aproximation - exact difference =================================================================================
 
 
-function genDHHMeans(dfx::DataFrame)
-    to0=dfx[(dfx[:modelType].=="GLM")&(dfx[:model].=="occ")&(dfx[:parameter].=="group"),:adj_mean_score0][1]
-    ty0=dfx[(dfx[:modelType].=="GLM")&(dfx[:model].=="dolocc")&(dfx[:parameter].=="group"),:adj_mean_score0][1]
-    tp0=dfx[(dfx[:modelType].=="GLM")&(dfx[:model].=="pen")&(dfx[:parameter].=="group"),:adj_mean_score0][1]
-    adj_mean_score0=to0*ty0*tp0            
-    to1=dfx[(dfx[:modelType].=="GLM")&(dfx[:model].=="occ")&(dfx[:parameter].=="group"),:adj_mean_score1][1]
-    ty1=dfx[(dfx[:modelType].=="GLM")&(dfx[:model].=="dolocc")&(dfx[:parameter].=="group"),:adj_mean_score1][1]
-    tp1=dfx[(dfx[:modelType].=="GLM")&(dfx[:model].=="pen")&(dfx[:parameter].=="group"),:adj_mean_score1][1]
-    adj_mean_score1=to1*ty1*tp1
-    unadj_avg_cntrl_hh_pre = mean(df_data[ (df_data[:group] .== 0), :prd_1_net_pr_pre] )
-    unadj_avg_expsd_hh_pre = mean(df_data[ (df_data[:group] .== 1), :prd_1_net_pr_pre] )
-    unadj_avg_cntrl_hh_pst = mean(df_data[ (df_data[:group] .== 0), :prd_1_net_pr_pos] )
-    unadj_avg_expsd_hh_pst = mean(df_data[ (df_data[:group] .== 1), :prd_1_net_pr_pos] )
-    vars=[0,0,adj_mean_score0,adj_mean_score1,unadj_avg_expsd_hh_pre,unadj_avg_expsd_hh_pst,unadj_avg_cntrl_hh_pre,unadj_avg_cntrl_hh_pst ]
-    push!(dfx,vcat(["total",0.0,0.0,0.0,0.0,"dolhh","ranef","DOLHH"],vars,zeros(Int, length(names(dfx))-16)))
-    for ranef in unique(dfx[(dfx[:modelType].=="GLMM"),:ranef])
-        for level in unique(dfx[(dfx[:modelType].=="GLMM")&(dfx[:ranef].==ranef),:parameter])
-            println(ranef," ~~ ",level)
-            review(dfa::DataArray,alt::Float64) = length(dfa) > 0 ? dfa[1] : alt 
-            o=review(dfx[(dfx[:modelType].=="GLMM")&(dfx[:model].=="occ")&(dfx[:ranef].==ranef)&(dfx[:parameter].==level),:adj_mean_score0],to0)
-            y=review(dfx[(dfx[:modelType].=="GLMM")&(dfx[:model].=="dolocc")&(dfx[:ranef].==ranef)&(dfx[:parameter].==level),:adj_mean_score0],ty0)
-            p=review(dfx[(dfx[:modelType].=="GLMM")&(dfx[:model].=="pen")&(dfx[:ranef].==ranef)&(dfx[:parameter].==level),:adj_mean_score0],tp0)
-            adj_mean_cntrl_grp=o*y*p            
-            o=review(dfx[(dfx[:modelType].=="GLMM")&(dfx[:model].=="occ")&(dfx[:ranef].==ranef)&(dfx[:parameter].==level),:adj_mean_score1],to1)
-            y=review(dfx[(dfx[:modelType].=="GLMM")&(dfx[:model].=="dolocc")&(dfx[:ranef].==ranef)&(dfx[:parameter].==level),:adj_mean_score1],ty1)
-            p=review(dfx[(dfx[:modelType].=="GLMM")&(dfx[:model].=="pen")&(dfx[:ranef].==ranef)&(dfx[:parameter].==level),:adj_mean_score1],tp1)
-            adj_mean_expsd_grp=o*y*p
-            unadj_avg_expsd_hh_pre = mean(df_data[ (df_data[:group].==1) & (df_data[Symbol(ranef)].==level), :prd_1_net_pr_pre] )
-            unadj_avg_expsd_hh_pst = mean(df_data[ (df_data[:group].==1) & (df_data[Symbol(ranef)].==level), :prd_1_net_pr_pos] )
-            unadj_avg_cntrl_hh_pre = mean(df_data[ (df_data[:group].==0) & (df_data[Symbol(ranef)].==level), :prd_1_net_pr_pre] )
-            unadj_avg_cntrl_hh_pst = mean(df_data[ (df_data[:group].==0) & (df_data[Symbol(ranef)].==level), :prd_1_net_pr_pos] )         
-            exposed=true # temp hack - all exposed
-            if exposed
-                unadj_avg_cntrl_hh_pre = dfx[(dfx[:modelType].=="DOLHH")&(dfx[:parameter].=="total") ,:unadj_avg_cntrl_hh_pre][1]
-                unadj_avg_cntrl_hh_pst = dfx[(dfx[:modelType].=="DOLHH")&(dfx[:parameter].=="total") ,:unadj_avg_cntrl_hh_pst][1]     
-            end   
-            vars=[0,0,adj_mean_score0,adj_mean_score1,unadj_avg_expsd_hh_pre,unadj_avg_expsd_hh_pst,unadj_avg_cntrl_hh_pre,unadj_avg_cntrl_hh_pst ]
-            push!(dfx,vcat([level,0.0,0.0,0.0,0.0,"dolhh",ranef,"DOLHH"],vars,zeros(Int, length(names(dfx))-16)))
-        end
-    end  
-    
-end
-genDHHMeans(dfx)
+#function insertMissingLevels(dfx::DataFrame)
+#    for ranef in unique(dfx[(dfx[:modelType].=="GLMM"),:ranef])
+#        for level in unique(dfx[(dfx[:modelType].=="GLMM")&(dfx[:ranef].==ranef),:parameter])
+#            review(dfa::DataArray,alt::Float64) = length(dfa) > 0 ? dfa[1] : alt 
+#            for m in ["occ","dolocc","pen"]
+#                if length(dfx[(dfx[:modelType].=="GLMM")&(dfx[:model].==m)&(dfx[:ranef].==ranef)&(dfx[:parameter].==level),:adj_mean_score0]) == 0
+#                    x= dfx[(dfx[:modelType].=="GLM")&(dfx[:parameter].=="group")&(dfx[:model].==m),:]
+#                    x[:modelType]="GLMM"
+#                    x[:ranef]=ranef
+#                    x[:parameter]=level
+#                    append!(dfx,x)
+#                    println("added $m $ranef ~ $level")
+#                #else
+#                #    println(".....")
+#                end
+#            end
+#        end
+#    end
+#    #return dfx
+#end
+#insertMissingLevels(dfx)
 
 
 
 
-ZDict = Dict("onetail_80_pct_intrvl" => 0.84 ,"onetail_90_pct_intrvl" => 1.28, "twotail_80_pct_intrvl" => 1.28, "twotail_90_pct_intrvl" => 1.65)
+ cols=[:model_desc, :model, :time_agg_period, :start_week,:end_week, :dependent_variable,:cnt_expsd_hh, :unadj_avg_expsd_hh_pre,
+          :unadj_avg_cntrl_hh_pre,:unadj_avg_expsd_hh_pst,:unadj_avg_cntrl_hh_pst,:unadj_dod_effct,:unadj_diff_effct,
+          :adj_mean_expsd_grp,:adj_mean_cntrl_grp,:adj_dod_effct,:twotail_pval,:onetail_pval,:abs_diff,
+          :dol_diff,:onetail_80_pct_intrvl_ub,:onetail_80_pct_intrvl_lb,:onetail_90_pct_intrvl_ub,:onetail_90_pct_intrvl_lb,
+          :twotail_80_pct_intrvl_ub,:twotail_80_pct_intrvl_lb,:twotail_90_pct_intrvl_ub,:twotail_90_pct_intrvl_lb,
+          :cnt_impressions,:twotail_pval_to_campaign,:onetail_pval_to_campaign,:cnt_model_hh
+    ]
 
 
+function extendRDF(rdf::DataFrame)
+    dfo=DataFrame(MODEL_DESC=ASCIIString[], Model=ASCIIString[], TIME_AGG_PERIOD=Int64[], START_WEEK=Int64[], END_WEEK=Int64[], dependent_variable=ASCIIString[],
+                  CNT_EXPSD_HH=Int64[], UNADJ_AVG_EXPSD_HH_PRE=Float64[], UNADJ_AVG_CNTRL_HH_PRE=Float64[], UNADJ_AVG_EXPSD_HH_PST=Float64[], 
+                  UNADJ_AVG_CNTRL_HH_PST=Float64[], UNADJ_DOD_EFFCT=Float64[], UNADJ_DIFF_EFFCT=Float64[], ADJ_MEAN_EXPSD_GRP=Float64[],
+                  ADJ_MEAN_CNTRL_GRP=Float64[], ADJ_DOD_EFFCT=Float64[], TWOTAIL_PVAL=Float64[], ONETAIL_PVAL=Float64[], ABS_DIFF=Float64[], 
+                  DOL_DIFF=Float64[], ONETAIL_80_PCT_INTRVL_UB=Float64[], ONETAIL_80_PCT_INTRVL_LB=Float64[], ONETAIL_90_PCT_INTRVL_UB=Float64[],
+                  ONETAIL_90_PCT_INTRVL_LB=Float64[], TWOTAIL_80_PCT_INTRVL_UB=Float64[], TWOTAIL_80_PCT_INTRVL_LB=Float64[], TWOTAIL_90_PCT_INTRVL_UB=Float64[],
+                  TWOTAIL_90_PCT_INTRVL_LB=Float64[], CNT_IMPRESSIONS=Int64[], TWOTAIL_PVAL_to_Campaign=Float64[], ONETAIL_PVAL_to_Campaign=Float64[],
+                  CNT_Model_HH=Float64[]
+                 )
 
-v_ttl=2
-
-function CIs_O_LB(iDict::OrderedDict, zscore::Float64, iAccuracy::Float64=0.000000001)
-    M = get(iDict, :M, NA)
-    Mt = get(iDict, :Mt, NA)
-    Mc = get(iDict, :Mc, NA)
-    N = get(iDict, :N, NA)
-    Nt = get(iDict, :Mt, NA)
-    Nc = get(iDict, :Nc, NA)
-    B1 = get(iDict, :B1, NA)
-    B2 = get(iDict, :B2, NA)
-    B3 = get(iDict, :B3, NA)
-    SE1 = get(iDict, :SE1, NA)
-    SE2 = get(iDict, :SE2, NA)
-    SE3 = get(iDict, :SE3, NA)
-    o_SE0 = get(iDict, :o_SE0, 0)
-    y_SE0 = get(iDict, :y_SE0, 0)
-    p_SE0 = get(iDict, :p_SE0, 0)
-SEsq=sqrt(SE1^2+SE2^2+SE3^2+o_SE0^2+y_SE0^2+p_SE0^2)
-    o_B0 = get(iDict, :o_B0, 0)
-    y_B0 = get(iDict, :y_B0, 0)
-    p_B0 = get(iDict, :p_B0, 0)
-
-    
-    o_mean_score0 = get(iDict, :o_mean_score0, NA)
-    o_mean_score1 = get(iDict, :o_mean_score1, NA)
-    y_mean_score0 = get(iDict, :y_mean_score0, NA)
-    y_mean_score1 = get(iDict, :y_mean_score1, NA)
-    p_mean_score0 = get(iDict, :p_mean_score0, NA)
-    p_mean_score1 =get(iDict, :p_mean_score1, NA)
-Bsum=(B1+B2+B3)-(o_B0+y_B0+p_B0)
-    
-    ztot = Bsum-(zscore*SEsq)
-    ######CONFIDENCE INTERVAL - LB ########        
-    m=nothing
-    m = Model(solver=NLoptSolver(algorithm=:LD_MMA, maxtime=v_ttl))
-    @variable(m, Bocc <= (B1-o_B0))
-    @variable(m, Bdolocc <= (B2-y_B0))
-    @variable(m, Bpen <= (B3-p_B0))
-    @NLobjective(m, Min, ((((p_mean_score1*(Nt/N))+(p_mean_score0*exp(Bpen)*(Nc/N)))* 
-                                  ((o_mean_score1*(Mt/M))+(o_mean_score0*exp(Bocc)*(Mc/M)))*
-                                  ((y_mean_score1*(Mt/M))+(y_mean_score0*exp(Bdolocc)*(Mc/M)))
-                                  )
-                                  -(((p_mean_score1*(Nt/N)*exp(-Bpen))+(p_mean_score0*(Nc/N)))*
-                                    ((o_mean_score1*(Mt/M)*exp(-Bocc))+(o_mean_score0*(Mc/M)))*
-                                    ((y_mean_score1*(Mt/M)*exp(-Bdolocc))+(y_mean_score0*(Mc/M)))
-                                    )
-                                  )
-                               )
-    @constraint(m, (0.000000000<= (((Bocc+Bpen+Bdolocc)-ztot))<= iAccuracy)) 
-    status = solve(m)
-    mval=getobjectivevalue(m)
-    println(mval)
-    mval_out=mval/(o_mean_score0*y_mean_score0*p_mean_score0)
-    return status == :Optimal ? mval_out : -Inf 
-end
-#x=genRndMDF(cnts, mocc, mdolocc, mpen, false)
-#CIs_O_LB(df2dict(x[x[:key].=="estimated_hh_income (H)",:]), 0.84, float("0.001"))
-
-
-
-function CIs_O_UB(iDict::OrderedDict, zscore::Float64, iAccuracy::Float64=0.000000001)
-    M = get(iDict, :M, NA)
-    Mt = get(iDict, :Mt, NA)
-    Mc = get(iDict, :Mc, NA)
-    N = get(iDict, :N, NA)
-    Nt = get(iDict, :Mt, NA)
-    Nc = get(iDict, :Nc, NA)
-    B1 = get(iDict, :B1, NA)
-    B2 = get(iDict, :B2, NA)
-    B3 = get(iDict, :B3, NA)
-    SE1 = get(iDict, :SE1, NA)
-    SE2 = get(iDict, :SE2, NA)
-    SE3 = get(iDict, :SE3, NA)
-    o_SE0 = get(iDict, :o_SE0, 0)
-    y_SE0 = get(iDict, :y_SE0, 0)
-    p_SE0 = get(iDict, :p_SE0, 0)
-SEsq=sqrt(SE1^2+SE2^2+SE3^2+o_SE0^2+y_SE0^2+p_SE0^2)
-    o_B0 = get(iDict, :o_B0, 0)
-    y_B0 = get(iDict, :y_B0, 0)
-    p_B0 = get(iDict, :p_B0, 0)
-    
-    o_mean_score0 = get(iDict, :o_mean_score0, NA)
-    o_mean_score1 = get(iDict, :o_mean_score1, NA)
-    y_mean_score0 = get(iDict, :y_mean_score0, NA)
-    y_mean_score1 = get(iDict, :y_mean_score1, NA)
-    p_mean_score0 = get(iDict, :p_mean_score0, NA)
-    p_mean_score1 =get(iDict, :p_mean_score1, NA)
-#Bsum=B1+B2+B3 + o_B0+y_B0+p_B0
-Bsum=(B1+B2+B3)-(o_B0+y_B0+p_B0)
-   
-    ######CONFIDENCE INTERVAL - UB ########
-    ztot = Bsum+(zscore*SEsq)
-
-    m=nothing
-    m = Model(solver=NLoptSolver(algorithm=:LD_MMA, maxtime=v_ttl))
-    @variable(m, Bocc >= (B1-o_B0))
-    @variable(m, Bdolocc >= (B2-y_B0))
-    @variable(m, Bpen >= (B3-p_B0))
-    @NLobjective(m, Max, ( (((p_mean_score1*(Nt/N))+(p_mean_score0*exp(Bpen)*(Nc/N)))
-                                 * ((o_mean_score1*(Mt/M))+(o_mean_score0*exp(Bocc)*(Mc/M)))
-                                 * ((y_mean_score1*(Mt/M))+(y_mean_score0*exp(Bdolocc)*(Mc/M)))
-                                  )
-                                 -(((p_mean_score1*(Nt/N)*exp(-Bpen))+(p_mean_score0*(Nc/N)))
-                                  *((o_mean_score1*(Mt/M)*exp(-Bocc))+(o_mean_score0*(Mc/M)))
-                                  *((y_mean_score1*(Mt/M)*exp(-Bdolocc))+(y_mean_score0*(Mc/M)))
-                                  )
-                               )
-                       )
-    @constraint(m, (0.0000<= (((Bocc+Bpen+Bdolocc)-ztot))<= iAccuracy)) 
-    status = solve(m)
-    mval=getobjectivevalue(m)
-    mval_out=mval/(o_mean_score0*y_mean_score0*p_mean_score0)
-    return return status == :Optimal ? mval_out : -Inf  #mval_out    
-end
-#x=genRndMDF(cnts, mocc, mdolocc, mpen, false)
-#CIs_O_UB(df2dict(x[x[:key].=="estimated_hh_income (H)",:]), 0.84, float("0.001"))
-
-
-function CIs_O(iDict::OrderedDict)
-    AccArr= [ "0.000000001","0.00000001","0.0000001","0.000001","0.00001","0.0001","0.001","0.01"]
-    for (zscore_key,zscore) in  ZDict          
-        pref="LB "*zscore_key[1:10]*" ("*iDict[:metakey]"):= "
-        preflen=length(pref)
-        dkey=Symbol(zscore_key*"_lb")
-        for iAcc in AccArr
-           print(pref," - "*iAcc*", ",iDict)       ;pref=lpad("", preflen, " ")
-           iDict[dkey] = CIs_O_LB(iDict, zscore, float(iAcc))
-           if (iDict[dkey] != -Inf) & (iDict[dkey] != Inf)
-               println("            : Confidence Interval : ", string(iDict[dkey]) )
-               break
-           end
-        end
-        if (iDict[dkey] == -Inf) | (iDict[dkey] == Inf) 
-             println( "!!!!!!!!!!!!!!!!!!FAILED!!!!!!!!!!!!!!!!!!!!!!!!   LB ",zscore_key[1:10]," := ",iDict[:metakey]," == !!!!!!!!!!!!!!!!!!FAILED!!!!!!!!!!!!!!!!!!" ) 
-        end
-       
-        pref="UB "*zscore_key[1:10]*" ("*iDict[:metakey]"):= "   
-        dkey=Symbol(zscore_key*"_ub")
-        for iAcc in AccArr
-           print(pref," - "*iAcc*", ")       ;pref=lpad("", preflen, " ")
-           iDict[dkey] = CIs_O_UB(iDict, zscore, float(iAcc))
-           if (iDict[dkey] != -Inf) & (iDict[dkey] != Inf)
-               println("            : Confidence Interval : ", string(iDict[dkey]) )
-               break
-           end
-        end   
-        if (iDict[dkey] == -Inf) | (iDict[dkey] == Inf) 
-            println( "!!!!!!!!!!!!!!!!!!FAILED!!!!!!!!!!!!!!!!!!   UB ",zscore_key[1:10]," := ",iDict[:metakey]," == !!!!!!!!!!!!!!!!!!FAILED!!!!!!!!!!!!!!!!!!" ) 
-        end
+    if (!cfg[:TotalModelsOnly]) & (length(filter(x-> x.hasBreaks ,[mocc,mdolocc, mpen]))  > 0 )
+            rvs=vcat( map(x-> x.reff.sdf, filter(x-> x.hasBreaks ,[mocc,mdolocc, mpen])))[[:key,:model,:twotail_pval_raw,:onetail_pval_raw]]
+            rvs = vcat(rvs,mdolhh.sdf[[:key,:model,:twotail_pval_raw,:onetail_pval_raw]])
+    else
+        rvs = mdolhh.sdf[[:key,:model,:twotail_pval_raw,:onetail_pval_raw]]
     end
-    return iDict
-end
-
-
-
-function calcPValue_Opt(iDict::OrderedDict)
-    dout = iDict 
-    M = get(iDict, :M, NA)
-    Mt = get(iDict, :Mt, NA)
-    Mc = get(iDict, :Mc, NA)
-    N = get(iDict, :N, NA)
-    Nt = get(iDict, :Mt, NA)
-    Nc = get(iDict, :Nc, NA)
-    B1 = get(iDict, :B1, NA)
-    B2 = get(iDict, :B2, NA)
-    B3 = get(iDict, :B3, NA)
-    SE1 = get(iDict, :SE1, NA)
-    SE2 = get(iDict, :SE2, NA)
-    SE3 = get(iDict, :SE3, NA)
-    SEsq=sqrt(SE1^2+SE2^2+SE3^2)
-    o_mean_score0 = get(iDict, :o_mean_score0, NA)
-    o_mean_score1 = get(iDict, :o_mean_score1, NA)
-    y_mean_score0 = get(iDict, :y_mean_score0, NA)
-    y_mean_score1 = get(iDict, :y_mean_score1, NA)
-    p_mean_score0 = get(iDict, :p_mean_score0, NA)
-    p_mean_score1 =get(iDict, :p_mean_score1, NA)
-    Bsum=B1+B2+B3
-    dout[:Bsum] = Bsum  
-    ###### PVALUE - ONE & TWO ########
-    m=nothing
-    m = Model(solver=NLoptSolver(algorithm=:LD_MMA, maxtime=v_ttl))
-    @variable(m, Bocc <= B1)
-    @variable(m, Bdolocc <= B2)
-    @variable(m, Bpen <= B3)
-    @objective(m, Max, (((Bocc+Bpen+Bdolocc)-Bsum)/SEsq ))
-    @NLconstraint(m, 0.00000 <= ((((p_mean_score1*(Nt/N))+(p_mean_score0*exp(Bpen)*(Nc/N)))
-	                           * ((o_mean_score1*(Mt/M))+(o_mean_score0*exp(Bocc)*(Mc/M)))
-	                           * ((y_mean_score1*(Mt/M))+(y_mean_score0*exp(Bdolocc)*(Mc/M)))
-	                             )
-	                           -(((p_mean_score1*(Nt/N)*exp(-Bpen))+(p_mean_score0*(Nc/N)))
-	                           *((o_mean_score1*(Mt/M)*exp(-Bocc))+(o_mean_score0*(Mc/M)))
-	                           *((y_mean_score1*(Mt/M)*exp(-Bdolocc))+(y_mean_score0*(Mc/M)))
-	                             )
-	                          ) 
-	               <= 0.00001
-                    )
-    #print(m)
-    status = solve(m)
-    zvalue=getobjectivevalue(m)
-    pvalue=2.0 * ccdf(Normal(), abs(zvalue))
-    two_tail = 1-pvalue     
-    one_tail = 1-(pvalue/2)
-    dout[:onetail_pval] = one_tail
-    dout[:twotail_pval] = two_tail
-    println("z-value: ", string(zvalue)," --> p-value: ",string(two_tail))
-    return dout           
-end
-
-
-function ConfidenceIntervals(mdolhh::MDolHH,x::DataFrame)
+        
+    for i in 1:length(rdf[1])
+        push!(dfo, [
+                     rdf[i,:key], 
+                     NA, #Model=NA, # code
+                     NA, #TIME_AGG_PERIOD=NA, 
+                     NA, #START_WEEK=NA, 
+                     NA, #END_WEEK=NA, 
+                     rdf[i,:model],
+                     NA, #CNT_EXPSD_HH=Int64[], 
+                     rdf[i,:unadj_avg_expsd_hh_pre], 
+                     rdf[i,:unadj_avg_cntrl_hh_pre], 
+                     rdf[i,:unadj_avg_expsd_hh_pst], 
+                     rdf[i,:unadj_avg_cntrl_hh_pst], 
+                     NA, #UNADJ_DOD_EFFCT=Float64[], 
+                     NA, #UNADJ_DIFF_EFFCT=Float64[], 
+                     rdf[i,:adj_mean_expsd_grp],
+                     rdf[i,:adj_mean_cntrl_grp], 
+                     rdf[i,:adj_dod_effct], 
+                     rdf[i,:twotail_pval], 
+                     rdf[i,:onetail_pval], 
+                     NA, #ABS_DIFF=Float64[], 
+                     NA, #DOL_DIFF=Float64[], 
+                     rdf[i,:onetail_80_pct_intrvl_ub], 
+                     rdf[i,:onetail_80_pct_intrvl_lb], 
+                     rdf[i,:onetail_90_pct_intrvl_ub],
+                     rdf[i,:onetail_90_pct_intrvl_lb], 
+                     rdf[i,:twotail_80_pct_intrvl_ub], 
+                     rdf[i,:twotail_80_pct_intrvl_lb], 
+                     rdf[i,:twotail_90_pct_intrvl_ub],
+                     rdf[i,:twotail_90_pct_intrvl_lb], 
+                     NA, #CNT_MPRESSIONS=Float64[], 
+                     NA, #TWOTAIL_PVAL_to_Campaign=Float64[], 
+                     NA, #ONETAIL_PVAL_to_Campaign=Float64[],
+                     NA #CNT_Model_HH=Float64[]      
+                   ]
+             )
+        x=length(dfo[1])
+        dfo[x,:UNADJ_DOD_EFFCT] = ( ((dfo[x,:UNADJ_AVG_EXPSD_HH_PST] - dfo[x,:UNADJ_AVG_EXPSD_HH_PRE]) - (dfo[x,:UNADJ_AVG_CNTRL_HH_PST] - dfo[x,:UNADJ_AVG_CNTRL_HH_PRE]))  /  dfo[x,:UNADJ_AVG_CNTRL_HH_PST] ) *100
+        
+        dfo[x,:UNADJ_DIFF_EFFCT] = ((dfo[x,:UNADJ_AVG_EXPSD_HH_PST] - dfo[x,:UNADJ_AVG_CNTRL_HH_PST]) / dfo[x,:UNADJ_AVG_CNTRL_HH_PST] )* 100 
     
-    -M = get(iDict, :M, NA)
-    -Mt = get(iDict, :Mt, NA)
-    -Mc = get(iDict, :Mc, NA)
-    -N = get(iDict, :N, NA)
-    -Nt = get(iDict, :Mt, NA)
-    -Nc = get(iDict, :Nc, NA)
-    -B1 = get(iDict, :B1, NA)
-    -B2 = get(iDict, :B2, NA)
-    -B3 = get(iDict, :B3, NA)
-    -SE1 = get(iDict, :SE1, NA)
-    -SE2 = get(iDict, :SE2, NA)
-    -SE3 = get(iDict, :SE3, NA)
-    -SEsq=sqrt(SE1^2+SE2^2+SE3^2)
-    -o_mean_score0 = get(iDict, :o_mean_score0, NA)
-    -o_mean_score1 = get(iDict, :o_mean_score1, NA)
-    -y_mean_score0 = get(iDict, :y_mean_score0, NA)
-    -y_mean_score1 = get(iDict, :y_mean_score1, NA)
-    -p_mean_score0 = get(iDict, :p_mean_score0, NA)
-    -p_mean_score1 =get(iDict, :p_mean_score1, NA)
-    
-    M = get(iDict, :M, NA)
-    Mt = get(iDict, :Mt, NA)
-    Mc = get(iDict, :Mc, NA)
-    N = get(iDict, :N, NA)
-    Nt = get(iDict, :Mt, NA)
-    Nc = get(iDict, :Nc, NA)
-    B1 = get(iDict, :B1, NA)
-    B2 = get(iDict, :B2, NA)
-    B3 = get(iDict, :B3, NA)
-    SE1 = get(iDict, :SE1, NA)
-    SE2 = get(iDict, :SE2, NA)
-    SE3 = get(iDict, :SE3, NA)
-    o_SE0 = get(iDict, :o_SE0, 0)
-    y_SE0 = get(iDict, :y_SE0, 0)
-    p_SE0 = get(iDict, :p_SE0, 0)
-SEsq=sqrt(SE1^2+SE2^2+SE3^2+o_SE0^2+y_SE0^2+p_SE0^2)
-    o_B0 = get(iDict, :o_B0, 0)
-    y_B0 = get(iDict, :y_B0, 0)
-    p_B0 = get(iDict, :p_B0, 0)
-    
-    o_mean_score0 = get(iDict, :o_mean_score0, NA)
-    o_mean_score1 = get(iDict, :o_mean_score1, NA)
-    y_mean_score0 = get(iDict, :y_mean_score0, NA)
-    y_mean_score1 = get(iDict, :y_mean_score1, NA)
-    p_mean_score0 = get(iDict, :p_mean_score0, NA)
-    p_mean_score1 =get(iDict, :p_mean_score1, NA)
-    
-    
-    
-    sdf=mdolhh.sdf       
-    for row = eachrow(x)
-        k = row[:key]
-        md = df2dict(x[x[:key].==k,:])
-        md[:metakey] = k
-        println("getting : ",k)
-        calcPValue_Opt(md)
-        CIs_O(md)
-        for zk in [ :onetail_pval, :twotail_pval, :onetail_80_pct_intrvl_lb,:onetail_80_pct_intrvl_ub, :onetail_90_pct_intrvl_lb, :onetail_90_pct_intrvl_ub
-                    ,:twotail_80_pct_intrvl_lb, :twotail_80_pct_intrvl_ub, :twotail_90_pct_intrvl_lb, :twotail_90_pct_intrvl_ub    
-                  ]
-            sdf[ sdf[:key].==k, zk]= md[zk]*100
+        if dfo[i,:dependent_variable] == "dolhh"
+            k=dfo[x,:MODEL_DESC]
+            if cfg[:counts]
+                dfo[x,:CNT_EXPSD_HH] =  getk(cnts.sdf,k,:hh)   #  cnts.get(k,:hh)
+                dfo[x,:CNT_IMPRESSIONS] =  getk(cnts.sdf,k,:impressions)  #cnts.get(k,:impressions)
+            end
+            dfo[x,:DOL_DIFF] = dfo[x,:ADJ_MEAN_EXPSD_GRP] - dfo[x,:ADJ_MEAN_CNTRL_GRP]
+            #dfo[x,:CNT_Model_HH] = cnts.sdf[cnts.sdf[:key].==dfo[x,:MODEL_DESC],:M][1]
+            dfo[x,:CNT_Model_HH] = cnts.sdf[cnts.sdf[:key].==dfo[x,:MODEL_DESC],:Nt][1]
+            
+            
+        elseif dfo[i,:dependent_variable] == "pen"
+            dfo[x,:CNT_Model_HH] = cnts.sdf[cnts.sdf[:key].==dfo[x,:MODEL_DESC],:Nt][1]
+        else
+            dfo[x,:CNT_Model_HH] = cnts.sdf[cnts.sdf[:key].==dfo[x,:MODEL_DESC],:Mt][1]
+        end        
+        
+        if (dfo[x,:dependent_variable] in ["occ","dolocc","pen","dolhh"]) & (dfo[x,:MODEL_DESC] !== "Total Campaign")
+            
+            
+            pv = rvs[(rvs[:key].== dfo[x,:MODEL_DESC])&(rvs[:model].== dfo[x,:dependent_variable]) ,:]
+            if length(pv[1]) >=1
+                dfo[i,:TWOTAIL_PVAL_to_Campaign] = pv[:twotail_pval_raw][1]
+                dfo[i,:ONETAIL_PVAL_to_Campaign] = pv[:onetail_pval_raw][1]
+            end
         end
+         
+        #format for unify
+        dfo[dfo[:dependent_variable].=="occ", :dependent_variable] = "OCC" 
+        dfo[dfo[:dependent_variable].=="dolocc", :dependent_variable] = "DOL/OCC" 
+        dfo[dfo[:dependent_variable].=="pen", :dependent_variable] = "PEN"
+        dfo[dfo[:dependent_variable].=="dolhh", :dependent_variable] = "DOL/HH"
+        
     end
+    dfo[:ABS_DIFF] = dfo[:ADJ_MEAN_EXPSD_GRP] - dfo[:ADJ_MEAN_CNTRL_GRP]
+    
+    return dfo
 end
-ConfidenceIntervals(mdolhh,genMDF(cnts, mocc, mdolocc, mpen))
+xrdf=extendRDF(genRDF(mocc,mdolocc,mpen, mdolhh,cfg) )
 
 
 
@@ -883,19 +1002,37 @@ ConfidenceIntervals(mdolhh,genMDF(cnts, mocc, mdolocc, mpen))
 
 
 
-function genReport()
-    dfx[isnan(dfx[:unadj_avg_expsd_hh_pre]),:unadj_avg_expsd_hh_pre] = 0.0  # Sometime there are no records for subset
-    dfx[isnan(dfx[:unadj_avg_expsd_hh_pst]),:unadj_avg_expsd_hh_pst] = 0.0  # Sometime there are no records for subset
-    #dfx[:adj_dod_effct] = 0.0
-    #row[:adj_dod_effct] =  ((row[:adj_mean_score1] .- row[:adj_mean_score0]) ./ row[:adj_mean_score0] ) *100
-    dfx[:adj_dod_effct] = ((dfx[:adj_mean_score1] .- dfx[:adj_mean_score0]) ./ dfx[:adj_mean_score0] ) *100
-    dfx[:unadj_dod_effect] = ( (( dfx[:unadj_avg_expsd_hh_pst] .- dfx[:unadj_avg_expsd_hh_pre]) .- (dfx[:unadj_avg_cntrl_hh_pst ] .- dfx[:unadj_avg_cntrl_hh_pre]))  ./  dfx[:unadj_avg_cntrl_hh_pst] ) *100
-    #dfx[(dfx[:modelType].=="GLM")&(dfx[:parameter].=="group")|(dfx[:modelType].=="GLMM"),:unadj_dod_effect]
 
-    dfo[x,:UNADJ_DIFF_EFFCT] = ((dfo[x,:UNADJ_AVG_EXPSD_HH_PST] - dfo[x,:UNADJ_AVG_CNTRL_HH_PST]) / dfo[x,:UNADJ_AVG_CNTRL_HH_PST] )* 100 
 
-    To be completed.......................
-end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

@@ -427,7 +427,7 @@ dfxc=deepcopy(dfx)
 for l in lags dfxc[l] = 0.0 end
 xvars = [:panid, :net_price, :date,:datelag,:date1,:chunks, :trans_time, :trans_num, :operating_company, :ndc_upc_ind,:item_type,:ad_event,   ]
 
-
+"""
 :product_id_jennieo6
  :panid
  :datenum
@@ -453,7 +453,7 @@ xvars = [:panid, :net_price, :date,:datelag,:date1,:chunks, :trans_time, :trans_
  
 
  :gross_imps
-
+"""
 
 v_covar=[ :feature,
           :display,
